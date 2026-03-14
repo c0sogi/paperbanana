@@ -104,7 +104,7 @@ class DatasetManager:
         if not self.index_path.exists():
             return False
         try:
-            with open(self.index_path) as f:
+            with open(self.index_path, encoding="utf-8") as f:
                 data = json.load(f)
             return len(data.get("examples", [])) > _BUILTIN_THRESHOLD
         except (json.JSONDecodeError, OSError):
@@ -119,7 +119,7 @@ class DatasetManager:
         if not self.info_path.exists():
             return None
         try:
-            with open(self.info_path) as f:
+            with open(self.info_path, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             return None
@@ -129,7 +129,7 @@ class DatasetManager:
         if not self.index_path.exists():
             return 0
         try:
-            with open(self.index_path) as f:
+            with open(self.index_path, encoding="utf-8") as f:
                 data = json.load(f)
             return len(data.get("examples", []))
         except (json.JSONDecodeError, OSError):
@@ -204,7 +204,7 @@ class DatasetManager:
                 "task": task,
                 "example_count": count,
             }
-            with open(self.info_path, "w") as f:
+            with open(self.info_path, "w", encoding="utf-8") as f:
                 json.dump(info, f, indent=2)
 
             _log(f"Cached {count} reference examples to {self.reference_dir}")

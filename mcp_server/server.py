@@ -17,7 +17,14 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from io import BytesIO
+
+# Force UTF-8 on Windows (Korean locale defaults to cp949)
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr, sys.stdin):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
 from pathlib import Path
 
 import structlog

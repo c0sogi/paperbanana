@@ -3,7 +3,7 @@
 import sys
 
 if sys.platform == "win32":
-    for _stream in (sys.stdout, sys.stderr):
+    for _stream in (sys.stdout, sys.stderr, sys.stdin):
         if hasattr(_stream, "reconfigure"):
             _stream.reconfigure(encoding="utf-8", errors="replace")
 
