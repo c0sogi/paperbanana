@@ -343,11 +343,17 @@ PaperBanana includes an MCP server for use with Claude Code, Cursor, or any MCP-
   "mcpServers": {
     "paperbanana": {
       "command": "uvx",
-      "args": ["--from", "paperbanana[mcp]", "paperbanana-mcp"],
+      "args": ["--from", "paperbanana[mcp] @ git+https://github.com/c0sogi/paperbanana", "paperbanana-mcp"],
       "env": { "GOOGLE_API_KEY": "your-google-api-key" }
     }
   }
 }
+```
+
+or run the `claude mcp add` command directly:
+
+```bash
+claude mcp add paperbanana -- uvx --from "paperbanana[mcp] @ git+https://github.com/c0sogi/paperbanana" paperbanana-mcp
 ```
 
 Three MCP tools are exposed: `generate_diagram`, `generate_plot`, and `evaluate_diagram`.

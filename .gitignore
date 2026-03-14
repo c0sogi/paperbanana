@@ -64,6 +64,7 @@ paper.md
 .mcp.yml
 .mcp.yaml.lock
 CLAUDE.md
+.omc/
 
 
 .ruff_cache/
