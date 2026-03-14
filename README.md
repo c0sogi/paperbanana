@@ -65,7 +65,7 @@ pip install paperbanana
 Or install from source for development:
 
 ```bash
-git clone https://github.com/llmsresearch/paperbanana.git
+git clone https://github.com/c0sogi/paperbanana.git
 cd paperbanana
 pip install -e ".[dev,openai,google]"
 ```
