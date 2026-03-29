@@ -5,7 +5,46 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Supported aspect ratios for diagram/plot generation.
+SUPPORTED_ASPECT_RATIOS = {
+    "1:1",
+    "2:3",
+    "3:2",
+    "3:4",
+    "4:3",
+    "9:16",
+    "16:9",
+    "21:9",
+}
+
+
+class PipelineProgressStage(str, Enum):
+    """Pipeline stage identifiers for progress callbacks."""
+
+    OPTIMIZER_START = "optimizer_start"
+    OPTIMIZER_END = "optimizer_end"
+    RETRIEVER_START = "retriever_start"
+    RETRIEVER_END = "retriever_end"
+    PLANNER_START = "planner_start"
+    PLANNER_END = "planner_end"
+    STYLIST_START = "stylist_start"
+    STYLIST_END = "stylist_end"
+    VISUALIZER_START = "visualizer_start"
+    VISUALIZER_END = "visualizer_end"
+    CRITIC_START = "critic_start"
+    CRITIC_END = "critic_end"
+
+
+class PipelineProgressEvent(BaseModel):
+    """Single progress event emitted by the pipeline for callbacks."""
+
+    stage: PipelineProgressStage = Field(description="Pipeline stage identifier")
+    message: str = Field(description="Human-readable message")
+    seconds: Optional[float] = Field(default=None, description="Elapsed seconds for this step")
+    iteration: Optional[int] = Field(default=None, description="Refinement iteration (1-based)")
+    extra: Optional[dict[str, Any]] = Field(default=None, description="Optional extra data")
 
 
 class DiagramType(str, Enum):
@@ -32,6 +71,17 @@ class GenerationInput(BaseModel):
             "If None, uses provider default."
         ),
     )
+
+    @field_validator("aspect_ratio")
+    @classmethod
+    def validate_aspect_ratio(cls, v: Optional[str]) -> Optional[str]:
+        """Ensure aspect_ratio, when provided, is one of the supported values."""
+        if v is None:
+            return v
+        if v not in SUPPORTED_ASPECT_RATIOS:
+            supported = ", ".join(sorted(SUPPORTED_ASPECT_RATIOS))
+            raise ValueError(f"aspect_ratio must be one of: {supported}")
+        return v
 
 
 class ReferenceExample(BaseModel):

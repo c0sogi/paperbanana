@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json as json_mod
 import time
 from pathlib import Path
 from typing import Optional
@@ -14,7 +15,12 @@ from rich.prompt import Prompt
 
 from paperbanana.core.config import Settings
 from paperbanana.core.logging import configure_logging
-from paperbanana.core.types import DiagramType, GenerationInput
+from paperbanana.core.types import (
+    DiagramType,
+    GenerationInput,
+    PipelineProgressEvent,
+    PipelineProgressStage,
+)
 from paperbanana.core.utils import generate_run_id
 
 app = typer.Typer(
@@ -62,7 +68,10 @@ def _upsert_env_vars(env_path: Path, updates: dict[str, str]) -> None:
 @app.command()
 def generate(
     input: Optional[str] = typer.Option(
-        None, "--input", "-i", help="Path to methodology text file"
+        None,
+        "--input",
+        "-i",
+        help="Path to methodology text file or PDF (.pdf requires: pip install 'paperbanana[pdf]')",
     ),
     caption: Optional[str] = typer.Option(
         None, "--caption", "-c", help="Figure caption / communicative intent"
@@ -153,10 +162,30 @@ def generate(
         "--exemplar-retries",
         help="Retry attempts for external exemplar retrieval on transient errors",
     ),
+    prompt_dir: Optional[str] = typer.Option(
+        None,
+        "--prompt-dir",
+        help="Path to alternative prompt templates directory (for A/B testing)",
+    ),
     seed: Optional[int] = typer.Option(
         None,
         "--seed",
         help="Random seed for reproducible image generation",
+    ),
+    venue: Optional[str] = typer.Option(
+        None,
+        "--venue",
+        help="Target venue style (neurips, icml, acl, ieee, custom)",
+    ),
+    progress_json: bool = typer.Option(
+        False,
+        "--progress-json",
+        help="Emit machine-readable JSON progress events to stdout during generation",
+    ),
+    pdf_pages: Optional[str] = typer.Option(
+        None,
+        "--pdf-pages",
+        help=("PDF input only: 1-based pages (e.g. '1-5', '3', '1-3,7,10-12'); default: all pages"),
     ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed agent progress and timing"
@@ -173,6 +202,16 @@ def generate(
     if exemplar_mode and exemplar_mode not in ("external_then_rerank", "external_only"):
         console.print(
             "[red]Error: --exemplar-mode must be external_then_rerank or external_only[/red]"
+        )
+        raise typer.Exit(1)
+    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
+        console.print(
+            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
+        )
+        raise typer.Exit(1)
+    if pdf_pages and (continue_last or continue_run):
+        console.print(
+            "[red]Error: --pdf-pages cannot be used with --continue or --continue-run[/red]"
         )
         raise typer.Exit(1)
 
@@ -215,6 +254,10 @@ def generate(
         overrides["exemplar_retrieval_max_retries"] = exemplar_retries
     if seed is not None:
         overrides["seed"] = seed
+    if venue:
+        overrides["venue"] = venue
+    if prompt_dir:
+        overrides["prompt_dir"] = prompt_dir
 
     if config:
         settings = Settings.from_yaml(config, **overrides)
@@ -275,41 +318,50 @@ def generate(
 
         console.print()
 
-        async def _run_continue():
-            pipeline = PaperBananaPipeline(settings=settings)
-
-            orig_visualizer_run = pipeline.visualizer.run
-            orig_critic_run = pipeline.critic.run
-
-            async def _visualizer_run(*a, **kw):
-                iteration = kw.get("iteration", "")
-                console.print(f"  [dim]●[/dim] Generating image (iter {iteration})...", end="")
-                t = time.perf_counter()
-                result = await orig_visualizer_run(*a, **kw)
-                console.print(f" [green]✓[/green] [dim]{time.perf_counter() - t:.1f}s[/dim]")
-                return result
-
-            async def _critic_run(*a, **kw):
+        def on_progress(event: PipelineProgressEvent) -> None:
+            if event.stage == PipelineProgressStage.VISUALIZER_START:
+                extra = event.extra or {}
+                total = extra.get("total_iterations", 0)
+                if event.iteration and total:
+                    label = f"{event.iteration}/{total}"
+                else:
+                    label = str(event.iteration or "")
+                if settings.auto_refine:
+                    label += " (auto)"
+                console.print(
+                    f"  [dim]●[/dim] Generating image (iter {event.iteration})...",
+                    end="",
+                )
+            elif event.stage == PipelineProgressStage.VISUALIZER_END:
+                console.print(
+                    f" [green]✓[/green] [dim]{event.seconds:.1f}s[/dim]"
+                    if event.seconds is not None
+                    else " [green]✓[/green]"
+                )
+            elif event.stage == PipelineProgressStage.CRITIC_START:
                 console.print("  [dim]●[/dim] Critic reviewing...", end="")
-                t = time.perf_counter()
-                result = await orig_critic_run(*a, **kw)
-                elapsed = time.perf_counter() - t
-                console.print(f" [green]✓[/green] [dim]{elapsed:.1f}s[/dim]")
-                if result.needs_revision:
+            elif event.stage == PipelineProgressStage.CRITIC_END:
+                console.print(
+                    f" [green]✓[/green] [dim]{event.seconds:.1f}s[/dim]"
+                    if event.seconds is not None
+                    else " [green]✓[/green]"
+                )
+                extra = event.extra or {}
+                if extra.get("needs_revision"):
                     console.print(
-                        f"    [yellow]↻[/yellow] Revision needed: [dim]{result.summary}[/dim]"
+                        "    [yellow]↻[/yellow] Revision needed: "
+                        f"[dim]{extra.get('summary', '')}[/dim]"
                     )
                 else:
                     console.print("    [green]✓[/green] [bold green]Critic satisfied[/bold green]")
-                return result
 
-            pipeline.visualizer.run = _visualizer_run
-            pipeline.critic.run = _critic_run
-
+        async def _run_continue():
+            pipeline = PaperBananaPipeline(settings=settings)
             return await pipeline.continue_run(
                 resume_state=resume_state,
                 additional_iterations=iterations,
                 user_feedback=feedback,
+                progress_callback=on_progress,
             )
 
         result = asyncio.run(_run_continue())
@@ -327,13 +379,22 @@ def generate(
         console.print("[red]Error: --caption is required for new runs[/red]")
         raise typer.Exit(1)
 
-    # Load source text
+    # Load source text (plain UTF-8 or PDF)
     input_path = Path(input)
     if not input_path.exists():
         console.print(f"[red]Error: Input file not found: {input}[/red]")
         raise typer.Exit(1)
 
-    source_context = input_path.read_text(encoding="utf-8")
+    from paperbanana.core.source_loader import load_methodology_source
+
+    try:
+        source_context = load_methodology_source(input_path, pdf_pages=pdf_pages)
+    except ImportError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
 
     # Build generation input
     gen_input = GenerationInput(
@@ -352,10 +413,13 @@ def generate(
             if output
             else Path(settings.output_dir) / generate_run_id() / f"final_output.{output_ext}"
         )
+        pdf_note = ""
+        if input_path.suffix.lower() == ".pdf":
+            pdf_note = f"\nPDF pages: {pdf_pages.strip() if pdf_pages else 'all'}"
         console.print(
             Panel.fit(
                 "[bold]PaperBanana[/bold] - Dry Run\n\n"
-                f"Input: {input_path}\n"
+                f"Input: {input_path}{pdf_note}\n"
                 f"Caption: {caption}\n"
                 f"VLM: {settings.vlm_provider} / {settings.vlm_model}\n"
                 f"Image: {settings.image_provider} / {settings.image_model}\n"
@@ -370,15 +434,16 @@ def generate(
     else:
         iter_label = str(settings.refinement_iterations)
 
-    console.print(
-        Panel.fit(
-            f"[bold]PaperBanana[/bold] - Generating Methodology Diagram\n\n"
-            f"VLM: {settings.vlm_provider} / {settings.effective_vlm_model}\n"
-            f"Image: {settings.image_provider} / {settings.effective_image_model}\n"
-            f"Iterations: {iter_label}",
-            border_style="blue",
+    if not progress_json:
+        console.print(
+            Panel.fit(
+                f"[bold]PaperBanana[/bold] - Generating Methodology Diagram\n\n"
+                f"VLM: {settings.vlm_provider} / {settings.effective_vlm_model}\n"
+                f"Image: {settings.image_provider} / {settings.effective_image_model}\n"
+                f"Iterations: {iter_label}",
+                border_style="blue",
+            )
         )
-    )
 
     # Run pipeline
 
@@ -386,101 +451,102 @@ def generate(
     total_start = time.perf_counter()
 
     async def _run_with_progress():
-        pipeline = PaperBananaPipeline(settings=settings)
+        def _on_progress(event: str, payload: dict) -> None:
+            if progress_json:
+                console.print(
+                    json_mod.dumps({"event": event, **payload}),
+                    highlight=False,
+                )
+
+        pipeline = PaperBananaPipeline(
+            settings=settings,
+            progress_callback=_on_progress if progress_json else None,
+        )
 
         # Hint: show if using small built-in reference set
         ref_count = pipeline.reference_store.count
-        if ref_count <= 20 and not auto_download_data:
+        if ref_count <= 20 and not auto_download_data and not progress_json:
             console.print(
                 "  [dim]Using built-in reference set"
                 f" ({ref_count} examples). For better results:[/dim]"
             )
             console.print("  [dim]  paperbanana data download   # or --auto-download-data[/dim]")
-        # Patch agents to print step-by-step progress with timing
-        orig_optimizer_run = pipeline.optimizer.run
-        orig_retriever_run = pipeline.retriever.run
-        orig_planner_run = pipeline.planner.run
-        orig_stylist_run = pipeline.stylist.run
-        orig_visualizer_run = pipeline.visualizer.run
-        orig_critic_run = pipeline.critic.run
 
-        async def _optimizer_run(*a, **kw):
-            console.print("  [dim]●[/dim] Optimizing inputs (parallel)...", end="")
-            t = time.perf_counter()
-            result = await orig_optimizer_run(*a, **kw)
-            console.print(f" [green]✓[/green] [dim]{time.perf_counter() - t:.1f}s[/dim]")
-            return result
+        def on_progress(event: PipelineProgressEvent) -> None:
+            if event.stage == PipelineProgressStage.OPTIMIZER_START:
+                console.print("[bold]Phase 0[/bold] — Input Optimization")
+                console.print("  [dim]●[/dim] Optimizing inputs (parallel)...", end="")
+            elif event.stage == PipelineProgressStage.OPTIMIZER_END:
+                console.print(
+                    f" [green]✓[/green] [dim]{event.seconds:.1f}s[/dim]"
+                    if event.seconds is not None
+                    else ""
+                )
+            elif event.stage == PipelineProgressStage.RETRIEVER_START:
+                console.print("[bold]Phase 1[/bold] — Planning")
+                console.print("  [dim]●[/dim] Retrieving examples...", end="")
+            elif event.stage == PipelineProgressStage.RETRIEVER_END:
+                extra = event.extra or {}
+                n = extra.get("examples_count", 0)
+                console.print(
+                    f" [green]✓[/green] [dim]{event.seconds:.1f}s ({n} examples)[/dim]"
+                    if event.seconds is not None
+                    else f" [green]✓[/green] [dim]({n} examples)[/dim]"
+                )
+            elif event.stage == PipelineProgressStage.PLANNER_START:
+                console.print("  [dim]●[/dim] Planning description...", end="")
+            elif event.stage == PipelineProgressStage.PLANNER_END:
+                extra = event.extra or {}
+                ratio = extra.get("recommended_ratio")
+                info = f"{event.seconds:.1f}s" if event.seconds is not None else ""
+                if ratio:
+                    info += f", ratio={ratio}"
+                console.print(f" [green]✓[/green] [dim]{info}[/dim]")
+            elif event.stage == PipelineProgressStage.STYLIST_START:
+                console.print("  [dim]●[/dim] Styling description...", end="")
+            elif event.stage == PipelineProgressStage.STYLIST_END:
+                console.print(
+                    f" [green]✓[/green] [dim]{event.seconds:.1f}s[/dim]"
+                    if event.seconds is not None
+                    else " [green]✓[/green]"
+                )
+            elif event.stage == PipelineProgressStage.VISUALIZER_START:
+                if event.iteration == 1:
+                    console.print("[bold]Phase 2[/bold] — Iterative Refinement")
+                extra = event.extra or {}
+                total = extra.get("total_iterations", 0)
+                if event.iteration and total:
+                    label = f"{event.iteration}/{total}"
+                else:
+                    label = str(event.iteration or "")
+                if settings.auto_refine:
+                    label += " (auto)"
+                console.print(f"  [dim]●[/dim] Generating image [{label}]...", end="")
+            elif event.stage == PipelineProgressStage.VISUALIZER_END:
+                console.print(
+                    f" [green]✓[/green] [dim]{event.seconds:.1f}s[/dim]"
+                    if event.seconds is not None
+                    else " [green]✓[/green]"
+                )
+            elif event.stage == PipelineProgressStage.CRITIC_START:
+                console.print("  [dim]●[/dim] Critic reviewing...", end="")
+            elif event.stage == PipelineProgressStage.CRITIC_END:
+                console.print(
+                    f" [green]✓[/green] [dim]{event.seconds:.1f}s[/dim]"
+                    if event.seconds is not None
+                    else " [green]✓[/green]"
+                )
+                extra = event.extra or {}
+                if extra.get("needs_revision"):
+                    for s in (extra.get("critic_suggestions") or [])[:3]:
+                        console.print(f"    [yellow]↻[/yellow] [dim]{s}[/dim]")
+                else:
+                    console.print("    [green]✓[/green] [bold green]Critic satisfied[/bold green]")
 
-        async def _retriever_run(*a, **kw):
-            console.print("  [dim]●[/dim] Retrieving examples...", end="")
-            t = time.perf_counter()
-            result = await orig_retriever_run(*a, **kw)
-            console.print(
-                f" [green]✓[/green] [dim]{time.perf_counter() - t:.1f}s"
-                f" ({len(result)} examples)[/dim]"
-            )
-            return result
-
-        async def _planner_run(*a, **kw):
-            console.print("  [dim]●[/dim] Planning description...", end="")
-            t = time.perf_counter()
-            result = await orig_planner_run(*a, **kw)
-            desc, ratio = result
-            info = f"{len(desc)} chars"
-            if ratio:
-                info += f", ratio={ratio}"
-            elapsed = time.perf_counter() - t
-            console.print(f" [green]\u2713[/green] [dim]{elapsed:.1f}s ({info})[/dim]")
-            return result
-
-        async def _stylist_run(*a, **kw):
-            console.print("  [dim]●[/dim] Styling description...", end="")
-            t = time.perf_counter()
-            result = await orig_stylist_run(*a, **kw)
-            console.print(f" [green]✓[/green] [dim]{time.perf_counter() - t:.1f}s[/dim]")
-            return result
-
-        async def _visualizer_run(*a, **kw):
-            iteration = kw.get("iteration", "")
-            total = (
-                settings.max_iterations if settings.auto_refine else settings.refinement_iterations
-            )
-            label = f"{iteration}/{total}"
-            if settings.auto_refine:
-                label += " (auto)"
-            if iteration == 1:
-                console.print("[bold]Phase 2[/bold] — Iterative Refinement")
-            console.print(f"  [dim]●[/dim] Generating image [{label}]...", end="")
-            t = time.perf_counter()
-            result = await orig_visualizer_run(*a, **kw)
-            console.print(f" [green]✓[/green] [dim]{time.perf_counter() - t:.1f}s[/dim]")
-            return result
-
-        async def _critic_run(*a, **kw):
-            console.print("  [dim]●[/dim] Critic reviewing...", end="")
-            t = time.perf_counter()
-            result = await orig_critic_run(*a, **kw)
-            elapsed = time.perf_counter() - t
-            console.print(f" [green]✓[/green] [dim]{elapsed:.1f}s[/dim]")
-            if result.needs_revision:
-                for s in result.critic_suggestions[:3]:
-                    console.print(f"    [yellow]↻[/yellow] [dim]{s}[/dim]")
-            else:
-                console.print("    [green]✓[/green] [bold green]Critic satisfied[/bold green]")
-            return result
-
-        pipeline.optimizer.run = _optimizer_run
-        pipeline.retriever.run = _retriever_run
-        pipeline.planner.run = _planner_run
-        pipeline.stylist.run = _stylist_run
-        pipeline.visualizer.run = _visualizer_run
-        pipeline.critic.run = _critic_run
-
-        if settings.optimize_inputs:
-            console.print("[bold]Phase 0[/bold] — Input Optimization")
-        console.print("[bold]Phase 1[/bold] — Planning")
-
-        return await pipeline.generate(gen_input)
+        return await pipeline.generate(
+            gen_input,
+            progress_callback=on_progress if not progress_json else None,
+        )
 
     result = asyncio.run(_run_with_progress())
     total_elapsed = time.perf_counter() - total_start
@@ -529,6 +595,11 @@ def batch(
     save_prompts: Optional[bool] = typer.Option(
         None, "--save-prompts/--no-save-prompts", help="Save prompts per run"
     ),
+    venue: Optional[str] = typer.Option(
+        None,
+        "--venue",
+        help="Target venue style (neurips, icml, acl, ieee, custom)",
+    ),
     auto_download_data: bool = typer.Option(
         False, "--auto-download-data", help="Auto-download reference set if needed"
     ),
@@ -537,6 +608,11 @@ def batch(
     """Generate multiple methodology diagrams from a manifest file (YAML or JSON)."""
     if format not in ("png", "jpeg", "webp"):
         console.print(f"[red]Error: Format must be png, jpeg, or webp. Got: {format}[/red]")
+        raise typer.Exit(1)
+    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
+        console.print(
+            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
+        )
         raise typer.Exit(1)
 
     configure_logging(verbose=verbose)
@@ -577,6 +653,8 @@ def batch(
         overrides["optimize_inputs"] = True
     if save_prompts is not None:
         overrides["save_prompts"] = save_prompts
+    if venue:
+        overrides["venue"] = venue
 
     if config:
         settings = Settings.from_yaml(config, **overrides)
@@ -629,7 +707,37 @@ def batch(
                 }
             )
             continue
-        source_context = input_path.read_text(encoding="utf-8")
+        from paperbanana.core.source_loader import load_methodology_source
+
+        try:
+            source_context = load_methodology_source(input_path, pdf_pages=item.get("pdf_pages"))
+        except ImportError as e:
+            console.print(f"[red]Skipping item '{item_id}': {e}[/red]")
+            report["items"].append(
+                {
+                    "id": item_id,
+                    "input": item["input"],
+                    "caption": item["caption"],
+                    "run_id": None,
+                    "output_path": None,
+                    "error": str(e),
+                }
+            )
+            continue
+        except ValueError as e:
+            console.print(f"[red]Skipping item '{item_id}': {e}[/red]")
+            report["items"].append(
+                {
+                    "id": item_id,
+                    "input": item["input"],
+                    "caption": item["caption"],
+                    "run_id": None,
+                    "output_path": None,
+                    "error": str(e),
+                }
+            )
+            continue
+
         gen_input = GenerationInput(
             source_context=source_context,
             communicative_intent=item["caption"],
@@ -771,10 +879,20 @@ def plot(
         "--save-prompts/--no-save-prompts",
         help="Save formatted prompts into the run directory (for debugging)",
     ),
+    venue: Optional[str] = typer.Option(
+        None,
+        "--venue",
+        help="Target venue style (neurips, icml, acl, ieee, custom)",
+    ),
 ):
     """Generate a statistical plot from data."""
     if format not in ("png", "jpeg", "webp"):
         console.print(f"[red]Error: Format must be png, jpeg, or webp. Got: {format}[/red]")
+        raise typer.Exit(1)
+    if venue and venue.lower() not in ("neurips", "icml", "acl", "ieee", "custom"):
+        console.print(
+            f"[red]Error: --venue must be neurips, icml, acl, ieee, or custom. Got: {venue}[/red]"
+        )
         raise typer.Exit(1)
 
     configure_logging(verbose=verbose)
@@ -811,6 +929,7 @@ def plot(
         optimize_inputs=optimize,
         auto_refine=auto,
         save_prompts=True if save_prompts is None else save_prompts,
+        venue=venue,
     )
 
     gen_input = GenerationInput(
@@ -906,7 +1025,7 @@ def setup():
 @app.command()
 def evaluate(
     generated: str = typer.Option(..., "--generated", "-g", help="Path to generated image"),
-    context: str = typer.Option(..., "--context", help="Path to source context text file"),
+    context: str = typer.Option(..., "--context", help="Path to source context text file or PDF"),
     caption: str = typer.Option(..., "--caption", "-c", help="Figure caption"),
     reference: str = typer.Option(..., "--reference", "-r", help="Path to human reference image"),
     vlm_provider: str = typer.Option(
@@ -914,6 +1033,11 @@ def evaluate(
     ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed agent progress and timing"
+    ),
+    pdf_pages: Optional[str] = typer.Option(
+        None,
+        "--pdf-pages",
+        help="PDF context only: 1-based page selection (default: all pages)",
     ),
 ):
     """Evaluate a generated diagram vs human reference (comparative)."""
@@ -931,7 +1055,21 @@ def evaluate(
         console.print(f"[red]Error: Reference image not found: {reference}[/red]")
         raise typer.Exit(1)
 
-    context_text = Path(context).read_text(encoding="utf-8")
+    context_path = Path(context)
+    if not context_path.exists():
+        console.print(f"[red]Error: Context file not found: {context}[/red]")
+        raise typer.Exit(1)
+
+    from paperbanana.core.source_loader import load_methodology_source
+
+    try:
+        context_text = load_methodology_source(context_path, pdf_pages=pdf_pages)
+    except ImportError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
 
     from dotenv import load_dotenv
 
@@ -977,7 +1115,12 @@ def evaluate(
 
 @app.command("ablate-retrieval")
 def ablate_retrieval(
-    input: str = typer.Option(..., "--input", "-i", help="Path to methodology text file"),
+    input: str = typer.Option(
+        ...,
+        "--input",
+        "-i",
+        help="Path to methodology text file or PDF",
+    ),
     caption: str = typer.Option(
         ..., "--caption", "-c", help="Figure caption / communicative intent"
     ),
@@ -1018,6 +1161,11 @@ def ablate_retrieval(
     ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed agent progress and timing"
+    ),
+    pdf_pages: Optional[str] = typer.Option(
+        None,
+        "--pdf-pages",
+        help="PDF input only: 1-based page selection (default: all pages)",
     ),
 ):
     """Run baseline vs retrieval ablation (k sweep) and save a JSON report."""
@@ -1070,8 +1218,19 @@ def ablate_retrieval(
     else:
         settings = Settings(**overrides)
 
+    from paperbanana.core.source_loader import load_methodology_source
+
+    try:
+        source_context = load_methodology_source(input_path, pdf_pages=pdf_pages)
+    except ImportError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
     gen_input = GenerationInput(
-        source_context=input_path.read_text(encoding="utf-8"),
+        source_context=source_context,
         communicative_intent=caption,
         diagram_type=DiagramType.METHODOLOGY,
     )
@@ -1124,6 +1283,145 @@ def ablate_retrieval(
     )
 
 
+@app.command("ablate-prompts")
+def ablate_prompts(
+    variant_prompt_dir: str = typer.Option(
+        ..., "--variant-dir", help="Path to the variant prompt templates directory"
+    ),
+    baseline_prompt_dir: Optional[str] = typer.Option(
+        None, "--baseline-dir", help="Path to baseline prompt templates (default: built-in prompts)"
+    ),
+    variant_name: str = typer.Option("variant", "--variant-name", help="Label for the variant"),
+    baseline_name: str = typer.Option("baseline", "--baseline-name", help="Label for the baseline"),
+    category: Optional[str] = typer.Option(
+        None, "--category", help="Only run entries in this category"
+    ),
+    ids: Optional[str] = typer.Option(None, "--ids", help="Comma-separated entry IDs to compare"),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Max entries to compare"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for reproducibility"),
+    output_report: Optional[str] = typer.Option(
+        None, "--output-report", "-o", help="Output JSON report path"
+    ),
+    config: Optional[str] = typer.Option(None, "--config", help="Path to config YAML file"),
+    vlm_provider: Optional[str] = typer.Option(None, "--vlm-provider", help="VLM provider"),
+    image_provider: Optional[str] = typer.Option(
+        None, "--image-provider", help="Image generation provider"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress"),
+):
+    """Run A/B comparison of two prompt configurations and produce a scored report."""
+    configure_logging(verbose=verbose)
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    overrides: dict = {}
+    if vlm_provider:
+        overrides["vlm_provider"] = vlm_provider
+    if image_provider:
+        overrides["image_provider"] = image_provider
+    if seed is not None:
+        overrides["seed"] = seed
+
+    if config:
+        settings = Settings.from_yaml(config, **overrides)
+    else:
+        settings = Settings(**overrides)
+
+    from paperbanana.evaluation.benchmark import filter_examples
+    from paperbanana.evaluation.prompt_ablation import (
+        PromptAblationRunner,
+        validate_prompt_dir,
+    )
+    from paperbanana.reference.store import ReferenceStore
+
+    try:
+        validate_prompt_dir(variant_prompt_dir)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if baseline_prompt_dir:
+        try:
+            validate_prompt_dir(baseline_prompt_dir)
+        except ValueError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            raise typer.Exit(1)
+
+    runner = PromptAblationRunner(
+        settings,
+        baseline_prompt_dir=baseline_prompt_dir,
+        variant_prompt_dir=variant_prompt_dir,
+        baseline_name=baseline_name,
+        variant_name=variant_name,
+    )
+
+    id_list = [s.strip() for s in ids.split(",") if s.strip()] if ids else None
+    try:
+        store = ReferenceStore.from_settings(settings)
+        examples = store.get_all()
+        if not examples:
+            raise ValueError("No benchmark entries found. Run 'paperbanana data download' first.")
+        entries = filter_examples(examples, category=category, ids=id_list, limit=limit)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not entries:
+        console.print("[red]Error: No entries match the given filters.[/red]")
+        raise typer.Exit(1)
+
+    console.print(
+        Panel.fit(
+            f"[bold]PaperBanana[/bold] — Prompt A/B Comparison\n\n"
+            f"Baseline: {runner.baseline_prompt_dir} ({baseline_name})\n"
+            f"Variant:  {variant_prompt_dir} ({variant_name})\n"
+            f"Entries:  {len(entries)}\n"
+            f"Seed:     {settings.seed or 'none'}",
+            border_style="magenta",
+        )
+    )
+
+    report = asyncio.run(runner.run(entries))
+
+    default_path = Path(settings.output_dir) / f"prompt_ablation_{generate_run_id()}.json"
+    report_path = Path(output_report) if output_report else default_path
+    saved_path = PromptAblationRunner.save_report(report, report_path)
+
+    summary = report.summary
+    if not summary:
+        console.print("[yellow]No entries were successfully scored.[/yellow]")
+        console.print(f"\nReport: [bold]{saved_path}[/bold]")
+        return
+
+    # Display results
+    deltas = summary.get("mean_dimension_deltas", {})
+    delta_lines = []
+    for dim, delta in deltas.items():
+        sign = "+" if delta > 0 else ""
+        delta_lines.append(f"  {dim.capitalize():14s} {sign}{delta}")
+
+    console.print(
+        Panel.fit(
+            "[bold]Prompt Ablation Summary[/bold]\n\n"
+            f"Scored:           {summary.get('scored', 0)}\n"
+            f"Variant wins:     {summary.get('variant_wins', 0)}  "
+            f"({summary.get('variant_win_rate', 0)}%)\n"
+            f"Baseline wins:    {summary.get('baseline_wins', 0)}  "
+            f"({summary.get('baseline_win_rate', 0)}%)\n"
+            f"Ties:             {summary.get('ties', 0)}\n\n"
+            f"Mean baseline:    {summary.get('mean_baseline_score', 0)}/100\n"
+            f"Mean variant:     {summary.get('mean_variant_score', 0)}/100\n"
+            f"Mean delta:       {summary.get('mean_overall_delta', 0):+.1f}\n\n"
+            "[bold]Per-dimension deltas (variant - baseline):[/bold]\n" + "\n".join(delta_lines),
+            border_style="cyan",
+        )
+    )
+
+    console.print(f"\nReport: [bold]{saved_path}[/bold]")
+
+
 @app.command()
 def benchmark(
     config: Optional[str] = typer.Option(None, "--config", help="Path to config YAML file"),
@@ -1157,11 +1455,25 @@ def benchmark(
         "png", "--format", "-f", help="Output image format (png, jpeg, webp)"
     ),
     seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for reproducibility"),
+    prompt_dir: Optional[str] = typer.Option(
+        None,
+        "--prompt-dir",
+        help="Path to alternative prompt templates directory",
+    ),
+    concurrency: int = typer.Option(
+        1,
+        "--concurrency",
+        "-c",
+        help="Maximum number of benchmark entries to process in parallel",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed progress"),
 ):
     """Run generation + evaluation across PaperBananaBench entries."""
     if image_format not in ("png", "jpeg", "webp"):
         console.print(f"[red]Error: Format must be png, jpeg, or webp. Got: {image_format}[/red]")
+        raise typer.Exit(1)
+    if concurrency < 1:
+        console.print("[red]Error: --concurrency must be at least 1[/red]")
         raise typer.Exit(1)
 
     configure_logging(verbose=verbose)
@@ -1170,7 +1482,7 @@ def benchmark(
 
     load_dotenv()
 
-    overrides: dict = {"output_format": image_format}
+    overrides: dict = {"output_format": image_format, "benchmark_concurrency": concurrency}
     if vlm_provider:
         overrides["vlm_provider"] = vlm_provider
     if vlm_model:
@@ -1189,6 +1501,8 @@ def benchmark(
         overrides["output_dir"] = output_dir
     if seed is not None:
         overrides["seed"] = seed
+    if prompt_dir:
+        overrides["prompt_dir"] = prompt_dir
 
     if config:
         settings = Settings.from_yaml(config, **overrides)
@@ -1362,6 +1676,75 @@ def clear():
 
     dm.clear()
     console.print("[green]Cached reference set cleared.[/green]")
+
+
+@app.command()
+def studio(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Bind address for the Studio server",
+    ),
+    port: int = typer.Option(
+        7860,
+        "--port",
+        help="TCP port for the Studio server",
+    ),
+    share: bool = typer.Option(
+        False,
+        "--share",
+        help="Create a temporary public Gradio share link",
+    ),
+    config: Optional[str] = typer.Option(
+        None,
+        "--config",
+        help="Path to YAML config (same as CLI generate)",
+    ),
+    output_dir: str = typer.Option(
+        "outputs",
+        "--output-dir",
+        "-o",
+        help="Default output directory (overridable in the Studio UI)",
+    ),
+    root_path: Optional[str] = typer.Option(
+        None,
+        "--root-path",
+        help="Root URL path when behind a reverse proxy",
+    ),
+):
+    """Launch PaperBanana Studio — local web UI for diagrams, plots, and evaluation."""
+    try:
+        from paperbanana.studio.app import launch_studio as launch_studio_ui
+    except ImportError as e:
+        console.print(
+            "[red]PaperBanana Studio requires Gradio. Install with:[/red]\n"
+            "  pip install 'paperbanana[studio]'"
+        )
+        console.print(f"[dim]{e}[/dim]")
+        raise typer.Exit(1)
+
+    configure_logging(verbose=False)
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    url = f"http://{host}:{port}/"
+    console.print(
+        Panel.fit(
+            f"[bold]PaperBanana Studio[/bold]\n\n"
+            f"Open in browser: [link={url}]{url}[/link]\n"
+            f"Default output directory: {output_dir}",
+            border_style="green",
+        )
+    )
+    launch_studio_ui(
+        host=host,
+        port=port,
+        share=share,
+        config_path=config,
+        default_output_dir=output_dir,
+        root_path=root_path,
+    )
 
 
 if __name__ == "__main__":

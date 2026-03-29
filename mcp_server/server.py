@@ -145,7 +145,12 @@ async def generate_diagram(
         optimize_inputs=optimize,
         auto_refine=auto_refine,
     )
-    pipeline = PaperBananaPipeline(settings=settings)
+
+    def _on_progress(event: str, payload: dict) -> None:
+        # Surface coarse progress to MCP logs; IDEs can display this in tool output.
+        logger.info("mcp_progress", tool="generate_diagram", progress_event=event, **payload)
+
+    pipeline = PaperBananaPipeline(settings=settings, progress_callback=_on_progress)
 
     gen_input = GenerationInput(
         source_context=source_context,
@@ -192,7 +197,11 @@ async def generate_plot(
         optimize_inputs=optimize,
         auto_refine=auto_refine,
     )
-    pipeline = PaperBananaPipeline(settings=settings)
+
+    def _on_progress(event: str, payload: dict) -> None:
+        logger.info("mcp_progress", tool="generate_plot", progress_event=event, **payload)
+
+    pipeline = PaperBananaPipeline(settings=settings, progress_callback=_on_progress)
 
     gen_input = GenerationInput(
         source_context=f"Data for plotting:\n{data_json}",

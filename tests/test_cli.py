@@ -45,6 +45,31 @@ def test_generate_dry_run_invalid_input():
     assert "not found" in result.output.lower() or "Error" in result.output
 
 
+def test_generate_accepts_progress_json_flag():
+    """paperbanana generate accepts --progress-json flag in dry-run mode."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        f.write("Sample methodology text for testing.")
+        input_path = f.name
+
+    try:
+        result = runner.invoke(
+            app,
+            [
+                "generate",
+                "--input",
+                input_path,
+                "--caption",
+                "test",
+                "--dry-run",
+                "--progress-json",
+            ],
+        )
+        # Dry run doesn't emit progress events, but the flag should be accepted.
+        assert result.exit_code == 0
+    finally:
+        Path(input_path).unlink(missing_ok=True)
+
+
 def test_ablate_retrieval_writes_report(monkeypatch):
     """ablate-retrieval writes a JSON report and exits cleanly."""
     from paperbanana.evaluation.retrieval_ablation import AblationReport, AblationVariantResult
