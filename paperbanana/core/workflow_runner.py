@@ -62,6 +62,33 @@ def _load_settings(
     return Settings(**overrides)
 
 
+def _apply_model_overrides(
+    overrides: dict[str, Any],
+    *,
+    vlm_provider: str | None,
+    vlm_model: str | None,
+    image_provider: str | None,
+    image_model: str | None,
+) -> None:
+    """Apply explicit generic models ahead of provider-specific env/YAML values."""
+    if vlm_provider:
+        overrides["vlm_provider"] = vlm_provider
+    if vlm_model:
+        overrides.update(
+            vlm_model=vlm_model,
+            google_vlm_model=None,
+            openai_vlm_model=None,
+        )
+    if image_provider:
+        overrides["image_provider"] = image_provider
+    if image_model:
+        overrides.update(
+            image_model=image_model,
+            google_image_model=None,
+            openai_image_model=None,
+        )
+
+
 def run_methodology_batch(
     *,
     manifest_path: Path,
@@ -119,14 +146,13 @@ def run_methodology_batch(
     ensure_dir(batch_dir)
 
     overrides: dict[str, Any] = {"output_dir": str(batch_dir), "output_format": format}
-    if vlm_provider:
-        overrides["vlm_provider"] = vlm_provider
-    if vlm_model:
-        overrides["vlm_model"] = vlm_model
-    if image_provider:
-        overrides["image_provider"] = image_provider
-    if image_model:
-        overrides["image_model"] = image_model
+    _apply_model_overrides(
+        overrides,
+        vlm_provider=vlm_provider,
+        vlm_model=vlm_model,
+        image_provider=image_provider,
+        image_model=image_model,
+    )
     if iterations is not None:
         overrides["refinement_iterations"] = iterations
     if auto:
@@ -365,14 +391,13 @@ def run_plot_batch(
         "optimize_inputs": optimize,
         "auto_refine": auto,
     }
-    if vlm_provider:
-        overrides["vlm_provider"] = vlm_provider
-    if vlm_model:
-        overrides["vlm_model"] = vlm_model
-    if image_provider:
-        overrides["image_provider"] = image_provider
-    if image_model:
-        overrides["image_model"] = image_model
+    _apply_model_overrides(
+        overrides,
+        vlm_provider=vlm_provider,
+        vlm_model=vlm_model,
+        image_provider=image_provider,
+        image_model=image_model,
+    )
     if iterations is not None:
         overrides["refinement_iterations"] = iterations
     if max_iterations is not None:
@@ -609,14 +634,13 @@ def run_orchestration_package(
         "optimize_inputs": optimize,
         "auto_refine": auto,
     }
-    if vlm_provider:
-        overrides["vlm_provider"] = vlm_provider
-    if vlm_model:
-        overrides["vlm_model"] = vlm_model
-    if image_provider:
-        overrides["image_provider"] = image_provider
-    if image_model:
-        overrides["image_model"] = image_model
+    _apply_model_overrides(
+        overrides,
+        vlm_provider=vlm_provider,
+        vlm_model=vlm_model,
+        image_provider=image_provider,
+        image_model=image_model,
+    )
     if iterations is not None:
         overrides["refinement_iterations"] = iterations
     if max_iterations is not None:

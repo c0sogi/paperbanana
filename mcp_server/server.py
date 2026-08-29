@@ -16,6 +16,8 @@ Tools:
     batch_diagrams      — Batch methodology diagrams from a YAML/JSON manifest
     batch_plots         — Batch statistical plots from a YAML/JSON manifest
 
+    list_available_models - List exact model IDs, providers, status, and dated pricing
+
 Usage:
     paperbanana-mcp          # stdio transport (default)
 """
@@ -42,6 +44,12 @@ if sys.platform == "win32":
         if hasattr(_stream, "reconfigure"):
             _stream.reconfigure(encoding="utf-8", errors="replace")
 
+from mcp_server.model_catalog import (
+    McpImageModel,
+    McpVlmModel,
+    available_models,
+    exact_model_overrides,
+)
 from paperbanana.core.config import Settings
 from paperbanana.core.pipeline import PaperBananaPipeline
 from paperbanana.core.resume import load_resume_state
@@ -179,6 +187,23 @@ def _embed_caption(image_path: str, caption: str) -> None:
 mcp = FastMCP("PaperBanana")
 
 
+def _settings_with_models(
+    *,
+    vlm_model: McpVlmModel | None = None,
+    image_model: McpImageModel | None = None,
+    **overrides: Any,
+) -> Settings:
+    """Build settings while ensuring an explicit model wins over env model overrides."""
+    overrides.update(exact_model_overrides(vlm_model=vlm_model, image_model=image_model))
+    return Settings(**overrides)
+
+
+@mcp.tool
+async def list_available_models() -> str:
+    """List exact MCP model IDs, inferred providers, status, requirements, and dated prices."""
+    return json.dumps(available_models(), indent=2)
+
+
 def _validate_input_images(input_images: list[str] | None) -> list[str]:
     """Validate user-provided reference/sketch image paths before the pipeline starts.
 
@@ -211,6 +236,8 @@ async def generate_diagram(
     auto_refine: bool = False,
     generate_caption: bool = False,
     input_images: list[str] | None = None,
+    vlm_model: McpVlmModel | None = None,
+    image_model: McpImageModel | None = None,
 ) -> Image:
     """Generate a publication-quality methodology diagram from text.
 
@@ -230,13 +257,17 @@ async def generate_diagram(
         input_images: Optional file paths to user-provided reference/sketch
             images (hand-drawn sketch, whiteboard photo, prior figure) that
             guide the layout and content of the generated diagram.
+        vlm_model: Exact VLM model ID. Omit to use configured defaults.
+        image_model: Exact image model ID. Omit to use configured defaults.
 
     Returns:
         The generated diagram as a PNG image.
     """
     validated_images = _validate_input_images(input_images)
 
-    settings = Settings(
+    settings = _settings_with_models(
+        vlm_model=vlm_model,
+        image_model=image_model,
         refinement_iterations=iterations,
         optimize_inputs=optimize,
         auto_refine=auto_refine,
@@ -283,6 +314,8 @@ async def continue_run(
     optimize: bool = False,
     auto_refine: bool = False,
     generate_caption: bool = False,
+    vlm_model: McpVlmModel | None = None,
+    image_model: McpImageModel | None = None,
 ) -> Image:
     """Continue refinement for a previous diagram or plot run (CLI: ``generate --continue-run``).
 
@@ -299,6 +332,8 @@ async def continue_run(
         auto_refine: When True, loop until the critic is satisfied (capped by ``max_iterations``).
         generate_caption: When True, generate a caption after continuation (same as
             ``generate_diagram``).
+        vlm_model: Exact VLM model ID. Omit to use configured defaults.
+        image_model: Exact image model ID. Omit to use configured defaults.
 
     Returns:
         The latest image from the continued run (PNG or compressed JPEG for MCP size limits).
@@ -307,7 +342,9 @@ async def continue_run(
         FileNotFoundError: If the run directory or ``run_input.json`` is missing.
         ValueError: If saved run state cannot be resumed.
     """
-    settings = Settings(
+    settings = _settings_with_models(
+        vlm_model=vlm_model,
+        image_model=image_model,
         refinement_iterations=iterations,
         optimize_inputs=optimize,
         auto_refine=auto_refine,
@@ -352,6 +389,7 @@ async def generate_plot(
     optimize: bool = False,
     auto_refine: bool = False,
     generate_caption: bool = False,
+    vlm_model: McpVlmModel | None = None,
 ) -> Image:
     """Generate a publication-quality statistical plot from JSON data.
 
@@ -369,13 +407,15 @@ async def generate_plot(
         generate_caption: Auto-generate a publication-ready figure caption
             after generation. When True, the caption is embedded in the
             image metadata (PNG tEXt chunk, key "Caption") and logged.
+        vlm_model: Exact VLM model ID. Omit to use configured defaults.
 
     Returns:
         The generated plot as a PNG image.
     """
     raw_data = json.loads(data_json)
 
-    settings = Settings(
+    settings = _settings_with_models(
+        vlm_model=vlm_model,
         refinement_iterations=iterations,
         optimize_inputs=optimize,
         auto_refine=auto_refine,
@@ -424,9 +464,9 @@ async def continue_diagram(
     max_iterations: int | None = None,
     config: str | None = None,
     vlm_provider: str | None = None,
-    vlm_model: str | None = None,
+    vlm_model: McpVlmModel | None = None,
     image_provider: str | None = None,
-    image_model: str | None = None,
+    image_model: McpImageModel | None = None,
     output_format: str = "png",
     optimize: bool = False,
     save_prompts: bool | None = None,
@@ -490,9 +530,9 @@ async def continue_plot(
     max_iterations: int | None = None,
     config: str | None = None,
     vlm_provider: str | None = None,
-    vlm_model: str | None = None,
+    vlm_model: McpVlmModel | None = None,
     image_provider: str | None = None,
-    image_model: str | None = None,
+    image_model: McpImageModel | None = None,
     output_format: str = "png",
     optimize: bool = False,
     save_prompts: bool | None = None,
@@ -530,6 +570,7 @@ async def evaluate_diagram(
     reference_path: str,
     context: str,
     caption: str,
+    vlm_model: McpVlmModel | None = None,
 ) -> str:
     """Evaluate a generated diagram against a human reference on 4 dimensions.
 
@@ -542,11 +583,12 @@ async def evaluate_diagram(
         reference_path: File path to the human-drawn reference image.
         context: Original methodology text used to generate the diagram.
         caption: Figure caption describing what the diagram communicates.
+        vlm_model: Exact VLM model ID. Omit to use configured defaults.
 
     Returns:
         Formatted evaluation scores with per-dimension results and overall winner.
     """
-    settings = Settings()
+    settings = _settings_with_models(vlm_model=vlm_model)
     vlm = ProviderRegistry.create_vlm(settings)
     judge = VLMJudge(vlm_provider=vlm, prompt_dir=find_prompt_dir())
 
@@ -577,6 +619,7 @@ async def evaluate_plot(
     reference_path: str,
     data_json: str,
     intent: str,
+    vlm_model: McpVlmModel | None = None,
 ) -> str:
     """Evaluate a generated statistical plot against a human reference on 4 dimensions.
 
@@ -585,11 +628,12 @@ async def evaluate_plot(
         reference_path: File path to the human reference plot.
         data_json: JSON string containing the source data used to generate the plot.
         intent: Communicative intent used for plot generation.
+        vlm_model: Exact VLM model ID. Omit to use configured defaults.
 
     Returns:
         Formatted evaluation scores with per-dimension results and overall winner.
     """
-    settings = Settings()
+    settings = _settings_with_models(vlm_model=vlm_model)
     vlm = ProviderRegistry.create_vlm(settings)
     judge = VLMJudge(vlm_provider=vlm, prompt_dir=find_prompt_dir())
     source_context = f"Data for plotting:\n{data_json}"
@@ -683,9 +727,9 @@ def _mcp_settings_for_continue(
     max_iterations: int | None = None,
     optimize: bool = False,
     vlm_provider: str | None = None,
-    vlm_model: str | None = None,
+    vlm_model: McpVlmModel | None = None,
     image_provider: str | None = None,
-    image_model: str | None = None,
+    image_model: McpImageModel | None = None,
     save_prompts: bool | None = None,
     venue: str | None = None,
     generate_caption: bool = False,
@@ -702,14 +746,14 @@ def _mcp_settings_for_continue(
         overrides["refinement_iterations"] = max(1, int(iterations))
     if max_iterations is not None:
         overrides["max_iterations"] = max(1, int(max_iterations))
-    if vlm_provider:
-        overrides["vlm_provider"] = vlm_provider.strip()
-    if vlm_model:
-        overrides["vlm_model"] = vlm_model.strip()
-    if image_provider:
-        overrides["image_provider"] = image_provider.strip()
-    if image_model:
-        overrides["image_model"] = image_model.strip()
+    overrides.update(
+        exact_model_overrides(
+            vlm_provider=vlm_provider.strip() if vlm_provider else None,
+            vlm_model=vlm_model,
+            image_provider=image_provider.strip() if image_provider else None,
+            image_model=image_model,
+        )
+    )
     if save_prompts is not None:
         overrides["save_prompts"] = save_prompts
     if venue:
@@ -733,9 +777,9 @@ async def _continue_run_mcp(
     max_iterations: int | None = None,
     config: str | None = None,
     vlm_provider: str | None = None,
-    vlm_model: str | None = None,
+    vlm_model: McpVlmModel | None = None,
     image_provider: str | None = None,
-    image_model: str | None = None,
+    image_model: McpImageModel | None = None,
     output_format: str = "png",
     optimize: bool = False,
     save_prompts: bool | None = None,
@@ -827,9 +871,9 @@ async def orchestrate_figures(
     dry_run: bool = False,
     config: str | None = None,
     vlm_provider: str | None = None,
-    vlm_model: str | None = None,
+    vlm_model: McpVlmModel | None = None,
     image_provider: str | None = None,
-    image_model: str | None = None,
+    image_model: McpImageModel | None = None,
     iterations: int | None = None,
     auto: bool = False,
     max_iterations: int | None = None,
@@ -852,6 +896,15 @@ async def orchestrate_figures(
         ``figures.tex``, ``captions.md``, ``orchestration_plan.json``, counts,
         ``strict_success``, and ``failures`` when applicable.
     """
+    try:
+        selection = exact_model_overrides(
+            vlm_provider=vlm_provider,
+            vlm_model=vlm_model,
+            image_provider=image_provider,
+            image_model=image_model,
+        )
+    except ValueError as e:
+        return _json_result({"error": str(e), "strict_success": False})
 
     def _run() -> dict:
         return run_orchestration_package(
@@ -864,9 +917,9 @@ async def orchestrate_figures(
             pdf_pages=pdf_pages,
             dry_run=dry_run,
             config=config,
-            vlm_provider=vlm_provider,
+            vlm_provider=selection.get("vlm_provider", vlm_provider),
             vlm_model=vlm_model,
-            image_provider=image_provider,
+            image_provider=selection.get("image_provider", image_provider),
             image_model=image_model,
             iterations=iterations,
             auto=auto,
@@ -894,9 +947,9 @@ async def batch_diagrams(
     output_dir: str = "outputs",
     config: str | None = None,
     vlm_provider: str | None = None,
-    vlm_model: str | None = None,
+    vlm_model: McpVlmModel | None = None,
     image_provider: str | None = None,
-    image_model: str | None = None,
+    image_model: McpImageModel | None = None,
     iterations: int | None = None,
     auto: bool = False,
     max_iterations: int | None = None,
@@ -917,15 +970,24 @@ async def batch_diagrams(
     Returns JSON with ``batch_dir``, ``batch_report_path``, per-item summary,
     ``composite_path`` when configured, and ``strict_success`` (false if any item failed).
     """
+    try:
+        selection = exact_model_overrides(
+            vlm_provider=vlm_provider,
+            vlm_model=vlm_model,
+            image_provider=image_provider,
+            image_model=image_model,
+        )
+    except ValueError as e:
+        return _json_result({"error": str(e), "strict_success": False})
 
     def _run() -> dict:
         return run_methodology_batch(
             manifest_path=Path(manifest_path),
             output_dir=Path(output_dir),
             config=config,
-            vlm_provider=vlm_provider,
+            vlm_provider=selection.get("vlm_provider", vlm_provider),
             vlm_model=vlm_model,
-            image_provider=image_provider,
+            image_provider=selection.get("image_provider", image_provider),
             image_model=image_model,
             iterations=iterations,
             auto=auto,
@@ -955,9 +1017,9 @@ async def batch_plots(
     output_dir: str = "outputs",
     config: str | None = None,
     vlm_provider: str | None = None,
-    vlm_model: str | None = None,
+    vlm_model: McpVlmModel | None = None,
     image_provider: str | None = None,
-    image_model: str | None = None,
+    image_model: McpImageModel | None = None,
     iterations: int | None = None,
     auto: bool = False,
     max_iterations: int | None = None,
@@ -978,15 +1040,24 @@ async def batch_plots(
     Returns JSON with ``batch_dir``, ``batch_report_path``, item summary, and
     ``strict_success``.
     """
+    try:
+        selection = exact_model_overrides(
+            vlm_provider=vlm_provider,
+            vlm_model=vlm_model,
+            image_provider=image_provider,
+            image_model=image_model,
+        )
+    except ValueError as e:
+        return _json_result({"error": str(e), "strict_success": False})
 
     def _run() -> dict:
         return run_plot_batch(
             manifest_path=Path(manifest_path),
             output_dir=Path(output_dir),
             config=config,
-            vlm_provider=vlm_provider,
+            vlm_provider=selection.get("vlm_provider", vlm_provider),
             vlm_model=vlm_model,
-            image_provider=image_provider,
+            image_provider=selection.get("image_provider", image_provider),
             image_model=image_model,
             iterations=iterations,
             auto=auto,

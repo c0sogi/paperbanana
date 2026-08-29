@@ -17,6 +17,22 @@ MCP server that exposes PaperBanana's diagram and plot generation as tools for C
 | `orchestrate_figures` | Plan / generate a full-paper figure package (same workflow as `paperbanana orchestrate`); returns JSON paths and status |
 | `batch_diagrams` | Run a methodology batch from a manifest path (`paperbanana batch`) |
 | `batch_plots` | Run a statistical plot batch from a manifest path (`paperbanana plot-batch`) |
+| `list_available_models` | List exact selectable model IDs, inferred providers, status, required environment variables, and dated pricing |
+
+### Model selection
+
+Generation and evaluation tools expose exact model IDs in their MCP schemas. Set only the model; PaperBanana infers the matching provider. Omit the model fields to keep using `.env`, YAML, or the built-in defaults (`gemini-3.7-flash` and `gemini-3.1-flash-image`).
+
+```json
+{
+  "source_context": "Method description...",
+  "caption": "Overview of the method",
+  "vlm_model": "gemini-3.7-flash",
+  "image_model": "gpt-image-2"
+}
+```
+
+VLM choices are `gemini-3.7-flash` and `gpt-5.2`. Image choices are `gemini-3.1-flash-image`, `gemini-3-pro-image`, `gpt-image-1.5`, and `gpt-image-2`. Call `list_available_models` only when detailed status and pricing information is needed; generation tool descriptions stay compact.
 
 ### Batch and orchestration tools
 
@@ -46,7 +62,7 @@ Add to `.claude/claude_code_config.json` (or project-level):
     "paperbanana": {
       "command": "uvx",
       "args": ["--from", "paperbanana[mcp]", "paperbanana-mcp"],
-      "env": { "OPENAI_API_KEY": "your-openai-api-key" }
+      "env": { "GOOGLE_API_KEY": "your-google-api-key" }
     }
   }
 }
@@ -62,7 +78,7 @@ Add to `.cursor/mcp.json` in your project:
     "paperbanana": {
       "command": "uvx",
       "args": ["--from", "paperbanana[mcp]", "paperbanana-mcp"],
-      "env": { "OPENAI_API_KEY": "your-openai-api-key" }
+      "env": { "GOOGLE_API_KEY": "your-google-api-key" }
     }
   }
 }
@@ -73,7 +89,7 @@ Add to `.cursor/mcp.json` in your project:
 For contributors or local development:
 
 ```bash
-pip install -e ".[mcp]"
+uv sync --extra mcp
 ```
 
 This installs `fastmcp` and registers the `paperbanana-mcp` console script. Then use the same MCP config as above but replace the `uvx` command with a direct call:
@@ -83,7 +99,7 @@ This installs `fastmcp` and registers the `paperbanana-mcp` console script. Then
   "mcpServers": {
     "paperbanana": {
       "command": "paperbanana-mcp",
-      "env": { "OPENAI_API_KEY": "your-openai-api-key" }
+      "env": { "GOOGLE_API_KEY": "your-google-api-key" }
     }
   }
 }
@@ -143,9 +159,9 @@ The server reads configuration from environment variables and `.env` files.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENAI_API_KEY` | (none) | OpenAI API key (default provider) |
+| `OPENAI_API_KEY` | (none) | OpenAI API key (needed for selected OpenAI models) |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI endpoint (or Azure OpenAI / Foundry URL) |
-| `GOOGLE_API_KEY` | (none) | Google API key (for Gemini provider) |
+| `GOOGLE_API_KEY` | (none) | Google API key (needed for the default Gemini models) |
 | `GOOGLE_BASE_URL` | (none) | Optional custom Gemini-compatible endpoint |
 | `GOOGLE_VLM_MODEL` | (none) | Optional Gemini VLM model override |
 | `GOOGLE_IMAGE_MODEL` | (none) | Optional Gemini image model override |

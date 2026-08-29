@@ -689,7 +689,9 @@ or run the `claude mcp add` command directly:
 claude mcp add paperbanana -- uvx --from "paperbanana[mcp] @ git+https://github.com/c0sogi/paperbanana" paperbanana-mcp
 ```
 
-Eleven MCP tools are exposed: `generate_diagram`, `generate_plot`, `continue_run` (resume a prior `run_*` with optional feedback), `continue_diagram`, `continue_plot`, `evaluate_diagram`, `evaluate_plot`, `orchestrate_figures` (full-paper figure packages), `batch_diagrams`, `batch_plots`, and `download_references`.
+Twelve MCP tools are exposed: `generate_diagram`, `generate_plot`, `continue_run` (resume a prior `run_*` with optional feedback), `continue_diagram`, `continue_plot`, `evaluate_diagram`, `evaluate_plot`, `orchestrate_figures` (full-paper figure packages), `batch_diagrams`, `batch_plots`, `download_references`, and `list_available_models`.
+
+Generation calls accept exact `vlm_model` and `image_model` IDs and infer the provider automatically. For example: `{"source_context":"...","caption":"...","vlm_model":"gemini-3.7-flash","image_model":"gpt-image-2"}`. Call `list_available_models` when you need the complete allowed-model list and dated pricing; omitting model fields preserves `.env`/YAML settings and the Gemini defaults.
 
 The repo also ships with 3 Claude Code skills:
 - `/generate-diagram <file> [caption]` - generate a methodology diagram from a text file

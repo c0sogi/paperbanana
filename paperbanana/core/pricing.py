@@ -50,6 +50,7 @@ VLM_PRICING: dict[tuple[str, str], dict[str, float]] = {
 # (provider, model_prefix) -> USD per image
 IMAGE_GEN_PRICING: dict[tuple[str, str], float] = {
     # Google Gemini image — paid; 1K-resolution per-image prices (4K is higher)
+    ("google_imagen", "gemini-3-pro-image"): 0.134,
     ("google_imagen", "gemini-3-pro-image-preview"): 0.134,
     ("google_imagen", "gemini-3.1-flash-image"): 0.067,
     ("google_imagen", "gemini-3.1-flash-image-preview"): 0.067,

@@ -8,6 +8,7 @@ tool list in sync with the docs.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
@@ -27,6 +28,7 @@ EXPECTED_TOOLS = {
     "generate_diagram",
     "generate_plot",
     "orchestrate_figures",
+    "list_available_models",
 }
 
 
@@ -59,6 +61,68 @@ def test_generate_diagram_exposes_input_images_param():
     """generate_diagram accepts optional input_images (reference/sketch paths)."""
     tool = next(t for t in _list_tools() if t.name == "generate_diagram")
     assert "input_images" in tool.parameters.get("properties", {})
+
+
+def _enum_values(tool_name: str, parameter: str) -> set[str]:
+    tool = next(t for t in _list_tools() if t.name == tool_name)
+    schema = tool.parameters["properties"][parameter]
+    return set(next(branch["enum"] for branch in schema["anyOf"] if "enum" in branch))
+
+
+def test_model_parameters_expose_exact_ids():
+    expected_vlm = {
+        "gemini-3.7-flash",
+        "gpt-5.2",
+    }
+    expected_image = {
+        "gemini-3.1-flash-image",
+        "gemini-3-pro-image",
+        "gpt-image-1.5",
+        "gpt-image-2",
+    }
+    for tool_name in (
+        "generate_diagram",
+        "continue_run",
+        "generate_plot",
+        "continue_diagram",
+        "continue_plot",
+        "evaluate_diagram",
+        "evaluate_plot",
+        "orchestrate_figures",
+        "batch_diagrams",
+        "batch_plots",
+    ):
+        assert _enum_values(tool_name, "vlm_model") == expected_vlm
+    for tool_name in (
+        "generate_diagram",
+        "continue_run",
+        "continue_diagram",
+        "continue_plot",
+        "orchestrate_figures",
+        "batch_diagrams",
+        "batch_plots",
+    ):
+        assert _enum_values(tool_name, "image_model") == expected_image
+
+    generate_plot = next(t for t in _list_tools() if t.name == "generate_plot")
+    assert "image_model" not in generate_plot.parameters["properties"]
+
+
+def test_list_available_models_returns_objective_catalog():
+    from mcp_server.server import list_available_models
+
+    catalog = json.loads(asyncio.run(list_available_models()))
+    assert catalog["defaults"] == {
+        "vlm_model": "gemini-3.7-flash",
+        "image_model": "gemini-3.1-flash-image",
+    }
+    assert catalog["price_checked_at"] == "2026-08-29"
+    assert {item["model"] for item in catalog["image_models"]} == {
+        "gemini-3.1-flash-image",
+        "gemini-3-pro-image",
+        "gpt-image-1.5",
+        "gpt-image-2",
+    }
 
 
 def test_validate_input_images_rejects_missing_and_non_raster(tmp_path):
