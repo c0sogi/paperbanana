@@ -7,7 +7,7 @@ from typing import Optional
 
 import structlog
 from PIL import Image
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from paperbanana.core.utils import image_to_base64
 from paperbanana.providers.base import VLMProvider
@@ -19,6 +19,15 @@ _THINKING_MODEL_RE = re.compile(r"gemini-(?:[3-9]|[1-9]\d|2\.[5-9]|2\.\d{2,})")
 _DEFAULT_THINKING_BUDGET = 8192
 
 
+class GeminiEmptyResponseError(RuntimeError):
+    """Gemini returned a valid API response but with no text content.
+
+    This typically indicates a deterministic refusal (safety filter, content
+    policy) rather than a transient failure, so retrying the same input is
+    unlikely to produce a different result.
+    """
+
+
 class GeminiVLM(VLMProvider):
     """Google Gemini VLM using the google-genai SDK.
 
@@ -28,7 +37,7 @@ class GeminiVLM(VLMProvider):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-2.5-flash",
         base_url: Optional[str] = None,
     ):
         self._api_key = api_key
@@ -67,7 +76,11 @@ class GeminiVLM(VLMProvider):
     def is_available(self) -> bool:
         return self._api_key is not None
 
-    @retry(stop=stop_after_attempt(8), wait=wait_exponential(min=2, max=120))
+    @retry(
+        stop=stop_after_attempt(8),
+        wait=wait_exponential(min=2, max=120),
+        retry=retry_if_not_exception_type(GeminiEmptyResponseError),
+    )
     async def generate(
         self,
         prompt: str,
@@ -123,9 +136,24 @@ class GeminiVLM(VLMProvider):
             config=config,
         )
 
-        logger.debug(
-            "Gemini response",
-            model=self._model,
-            usage=getattr(response, "usage_metadata", None),
-        )
-        return response.text
+        usage = getattr(response, "usage_metadata", None)
+        logger.debug("Gemini response", model=self._model, usage=usage)
+
+        if self.cost_tracker is not None and usage is not None:
+            self.cost_tracker.record_vlm_call(
+                provider=self.name,
+                model=self._model,
+                input_tokens=getattr(usage, "prompt_token_count", 0),
+                output_tokens=getattr(usage, "candidates_token_count", 0),
+            )
+        text = response.text
+        if text is None:
+            logger.warning(
+                "Gemini returned empty response (no candidates)",
+                model=self._model,
+                usage=usage,
+            )
+            raise GeminiEmptyResponseError(
+                f"Gemini model {self._model} returned no text content. Usage metadata: {usage}"
+            )
+        return text

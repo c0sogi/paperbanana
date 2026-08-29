@@ -142,6 +142,7 @@ class BedrockImageGen(ImageGenProvider):
         height: int = 1024,
         seed: Optional[int] = None,
         aspect_ratio: Optional[str] = None,
+        quality: Optional[str] = None,
     ) -> Image.Image:
         client = self._get_client()
 
@@ -168,4 +169,7 @@ class BedrockImageGen(ImageGenProvider):
         result = json.loads(response["body"].read())
         b64_data = result["images"][0]
         image_bytes = base64.b64decode(b64_data)
+
+        if self.cost_tracker is not None:
+            self.cost_tracker.record_image_call(provider=self.name, model=self._model)
         return Image.open(BytesIO(image_bytes))
