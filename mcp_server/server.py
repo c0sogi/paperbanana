@@ -5,6 +5,11 @@ Claude Code, Cursor, or any MCP client.
 
 Tools:
     generate_diagram    — Generate a methodology diagram from text
+    start_diagram_session — Start diagram generation without blocking
+    list_figure_sessions — List active or recent diagram sessions
+    get_figure_session  — Inspect progress and the latest image path
+    preview_figure_session — Return the latest generated image
+    cancel_figure_session — Cancel an active diagram session
     continue_run        — Continue refinement for a prior diagram or plot run
     generate_plot       — Generate a statistical plot from JSON data
     continue_diagram    — Continue a prior methodology run (more refinement / feedback)
@@ -44,6 +49,7 @@ if sys.platform == "win32":
         if hasattr(_stream, "reconfigure"):
             _stream.reconfigure(encoding="utf-8", errors="replace")
 
+from mcp_server.figure_sessions import FigureSession, figure_sessions
 from mcp_server.model_catalog import (
     McpImageModel,
     McpVlmModel,
@@ -226,6 +232,74 @@ def _validate_input_images(input_images: list[str] | None) -> list[str]:
     return validated
 
 
+def _prepare_diagram_session(
+    *,
+    operation: str,
+    source_context: str,
+    caption: str,
+    iterations: int,
+    aspect_ratio: str | None,
+    optimize: bool,
+    auto_refine: bool,
+    generate_caption: bool,
+    input_images: list[str] | None,
+    vlm_model: McpVlmModel | None,
+    image_model: McpImageModel | None,
+) -> tuple[FigureSession, Any]:
+    """Build one tracked diagram job without starting it."""
+    validated_images = _validate_input_images(input_images)
+    settings = _settings_with_models(
+        vlm_model=vlm_model,
+        image_model=image_model,
+        refinement_iterations=iterations,
+        optimize_inputs=optimize,
+        auto_refine=auto_refine,
+        generate_caption=generate_caption,
+    )
+
+    session_id: str | None = None
+
+    def _on_progress(event: str, payload: dict) -> None:
+        logger.info(
+            "mcp_progress",
+            tool=operation,
+            progress_event=event,
+            **payload,
+        )
+        if session_id is not None:
+            figure_sessions.progress(session_id, event, payload)
+
+    pipeline = PaperBananaPipeline(settings=settings, progress_callback=_on_progress)
+    session = figure_sessions.create(
+        operation=operation,
+        run_id=pipeline.run_id,
+        run_dir=str(Path(settings.output_dir) / pipeline.run_id),
+    )
+    session_id = session.session_id
+    gen_input = GenerationInput(
+        source_context=source_context,
+        communicative_intent=caption,
+        diagram_type=DiagramType.METHODOLOGY,
+        aspect_ratio=aspect_ratio,
+        input_images=validated_images,
+    )
+
+    async def _generate() -> Image:
+        result = await pipeline.generate(gen_input)
+        effective_path, fmt = _compress_for_api(result.image_path)
+        figure_sessions.set_final_image(session.session_id, effective_path)
+        if result.generated_caption:
+            _embed_caption(effective_path, result.generated_caption)
+            logger.info(
+                "generated_caption",
+                tool=operation,
+                caption=result.generated_caption,
+            )
+        return Image(path=effective_path, format=fmt)
+
+    return session, _generate()
+
+
 @mcp.tool
 async def generate_diagram(
     source_context: str,
@@ -263,47 +337,97 @@ async def generate_diagram(
     Returns:
         The generated diagram as a PNG image.
     """
-    validated_images = _validate_input_images(input_images)
-
-    settings = _settings_with_models(
-        vlm_model=vlm_model,
-        image_model=image_model,
-        refinement_iterations=iterations,
-        optimize_inputs=optimize,
+    session, job = _prepare_diagram_session(
+        operation="generate_diagram",
+        source_context=source_context,
+        caption=caption,
+        iterations=iterations,
+        aspect_ratio=aspect_ratio,
+        optimize=optimize,
         auto_refine=auto_refine,
         generate_caption=generate_caption,
+        input_images=input_images,
+        vlm_model=vlm_model,
+        image_model=image_model,
     )
+    result = await figure_sessions.run(session, job, propagate=True)
+    assert isinstance(result, Image)
+    return result
 
-    def _on_progress(event: str, payload: dict) -> None:
-        logger.info(
-            "mcp_progress",
-            tool="generate_diagram",
-            progress_event=event,
-            **payload,
-        )
 
-    pipeline = PaperBananaPipeline(settings=settings, progress_callback=_on_progress)
+@mcp.tool
+async def start_diagram_session(
+    source_context: str,
+    caption: str,
+    iterations: int = 3,
+    aspect_ratio: str | None = None,
+    optimize: bool = False,
+    auto_refine: bool = False,
+    generate_caption: bool = False,
+    input_images: list[str] | None = None,
+    vlm_model: McpVlmModel | None = None,
+    image_model: McpImageModel | None = None,
+) -> str:
+    """Start methodology-diagram generation and return a session ID immediately.
 
-    gen_input = GenerationInput(
+    Poll ``get_figure_session`` for progress or ``preview_figure_session`` for
+    the newest completed iteration. Use ``cancel_figure_session`` to stop it.
+    Sessions live in the current MCP server process and are lost on restart.
+    """
+    session, job = _prepare_diagram_session(
+        operation="start_diagram_session",
         source_context=source_context,
-        communicative_intent=caption,
-        diagram_type=DiagramType.METHODOLOGY,
+        caption=caption,
+        iterations=iterations,
         aspect_ratio=aspect_ratio,
-        input_images=validated_images,
+        optimize=optimize,
+        auto_refine=auto_refine,
+        generate_caption=generate_caption,
+        input_images=input_images,
+        vlm_model=vlm_model,
+        image_model=image_model,
     )
+    figure_sessions.start_background(session, job)
+    return _json_result({"accepted": True, "session": figure_sessions.snapshot(session)})
 
-    result = await pipeline.generate(gen_input)
-    effective_path, fmt = _compress_for_api(result.image_path)
 
-    if result.generated_caption:
-        _embed_caption(effective_path, result.generated_caption)
-        logger.info(
-            "generated_caption",
-            tool="generate_diagram",
-            caption=result.generated_caption,
+@mcp.tool
+async def list_figure_sessions(include_finished: bool = False) -> str:
+    """List active diagram sessions, optionally including completed history."""
+    sessions = figure_sessions.list(include_finished=include_finished)
+    return _json_result({"count": len(sessions), "sessions": sessions})
+
+
+@mcp.tool
+async def get_figure_session(session_id: str) -> str:
+    """Return status, progress, and latest-image path for one diagram session."""
+    session = figure_sessions.get(session_id)
+    if session is None:
+        return _json_result(
+            {"error": f"Unknown figure session: {session_id}", "strict_success": False}
         )
+    return _json_result({"strict_success": True, "session": session})
 
+
+@mcp.tool
+async def preview_figure_session(session_id: str) -> Image:
+    """Return the newest completed iteration image for a diagram session."""
+    session = figure_sessions.get(session_id)
+    if session is None:
+        raise ValueError(f"Unknown figure session: {session_id}")
+    image_path = session.get("latest_image_path")
+    if not image_path:
+        raise ValueError(f"Session {session_id} has not produced an image yet")
+    effective_path, fmt = _compress_for_api(image_path)
     return Image(path=effective_path, format=fmt)
+
+
+@mcp.tool
+async def cancel_figure_session(session_id: str) -> str:
+    """Request cooperative cancellation of an active diagram session."""
+    result = await figure_sessions.cancel(session_id)
+    result["strict_success"] = bool(result.get("cancelled"))
+    return _json_result(result)
 
 
 @mcp.tool

@@ -19,6 +19,7 @@ from mcp_server.server import mcp  # noqa: E402
 EXPECTED_TOOLS = {
     "batch_diagrams",
     "batch_plots",
+    "cancel_figure_session",
     "continue_diagram",
     "continue_plot",
     "continue_run",
@@ -27,7 +28,11 @@ EXPECTED_TOOLS = {
     "evaluate_plot",
     "generate_diagram",
     "generate_plot",
+    "get_figure_session",
+    "list_figure_sessions",
     "orchestrate_figures",
+    "preview_figure_session",
+    "start_diagram_session",
     "list_available_models",
 }
 
@@ -82,6 +87,7 @@ def test_model_parameters_expose_exact_ids():
     }
     for tool_name in (
         "generate_diagram",
+        "start_diagram_session",
         "continue_run",
         "generate_plot",
         "continue_diagram",
@@ -95,6 +101,7 @@ def test_model_parameters_expose_exact_ids():
         assert _enum_values(tool_name, "vlm_model") == expected_vlm
     for tool_name in (
         "generate_diagram",
+        "start_diagram_session",
         "continue_run",
         "continue_diagram",
         "continue_plot",

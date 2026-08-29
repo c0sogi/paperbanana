@@ -7,6 +7,11 @@ MCP server that exposes PaperBanana's diagram and plot generation as tools for C
 | Tool | Description |
 |------|-------------|
 | `generate_diagram` | Generate a methodology diagram from text context + caption |
+| `start_diagram_session` | Start diagram generation in the background and return a session ID |
+| `list_figure_sessions` | List active sessions, optionally including finished sessions |
+| `get_figure_session` | Inspect status, current pipeline event, iteration, and image paths |
+| `preview_figure_session` | Return the newest completed iteration image |
+| `cancel_figure_session` | Cancel an active diagram session |
 | `continue_run` | Continue refinement for an existing `run_*` directory (optional critic feedback) |
 | `generate_plot` | Generate a statistical plot from JSON data + intent description |
 | `continue_diagram` | Continue a prior methodology `run_*` (more refinement and/or critic feedback); returns JSON paths |
@@ -33,6 +38,19 @@ Generation and evaluation tools expose exact model IDs in their MCP schemas. Set
 ```
 
 VLM choices are `gemini-3.7-flash` and `gpt-5.2`. Image choices are `gemini-3.1-flash-image`, `gemini-3-pro-image`, `gpt-image-1.5`, and `gpt-image-2`. Call `list_available_models` only when detailed status and pricing information is needed; generation tool descriptions stay compact.
+
+### Background diagram sessions
+
+Use `start_diagram_session` instead of `generate_diagram` when a long refinement
+run must remain observable and cancellable. It returns immediately with a
+`session_id` and `run_id`. Poll `get_figure_session`, inspect the newest image
+with `preview_figure_session`, and call `cancel_figure_session` if the run should
+stop. `list_figure_sessions` shows active sessions by default.
+
+Cancellation is cooperative: it interrupts the active async pipeline at its
+next cancellation point. Session records are held by the current MCP server
+process, so restarting that process clears the list. Generated iteration files
+already written under the reported `run_dir` remain on disk.
 
 ### Batch and orchestration tools
 

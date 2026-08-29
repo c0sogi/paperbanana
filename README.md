@@ -689,7 +689,7 @@ or run the `claude mcp add` command directly:
 claude mcp add paperbanana -- uvx --from "paperbanana[mcp] @ git+https://github.com/c0sogi/paperbanana" paperbanana-mcp
 ```
 
-Twelve MCP tools are exposed: `generate_diagram`, `generate_plot`, `continue_run` (resume a prior `run_*` with optional feedback), `continue_diagram`, `continue_plot`, `evaluate_diagram`, `evaluate_plot`, `orchestrate_figures` (full-paper figure packages), `batch_diagrams`, `batch_plots`, `download_references`, and `list_available_models`.
+Seventeen MCP tools are exposed. In addition to blocking generation and evaluation tools, `start_diagram_session`, `list_figure_sessions`, `get_figure_session`, `preview_figure_session`, and `cancel_figure_session` support observable, cancellable background diagram generation. The remaining tools are `generate_diagram`, `generate_plot`, `continue_run` (resume a prior `run_*` with optional feedback), `continue_diagram`, `continue_plot`, `evaluate_diagram`, `evaluate_plot`, `orchestrate_figures` (full-paper figure packages), `batch_diagrams`, `batch_plots`, `download_references`, and `list_available_models`.
 
 Generation calls accept exact `vlm_model` and `image_model` IDs and infer the provider automatically. For example: `{"source_context":"...","caption":"...","vlm_model":"gemini-3.7-flash","image_model":"gpt-image-2"}`. Call `list_available_models` when you need the complete allowed-model list and dated pricing; omitting model fields preserves `.env`/YAML settings and the Gemini defaults.
 
