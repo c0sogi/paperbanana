@@ -37,7 +37,7 @@ class GeminiVLM(VLMProvider):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.7-flash",
         base_url: Optional[str] = None,
     ):
         self._api_key = api_key
@@ -73,6 +73,10 @@ class GeminiVLM(VLMProvider):
         """Return True if the model uses thinking tokens (Gemini 2.5+)."""
         return bool(_THINKING_MODEL_RE.search(self._model.lower()))
 
+    def _uses_thinking_level(self) -> bool:
+        """Return True for models that replaced thinking budgets with levels."""
+        return self._model.lower().startswith("gemini-3.7-")
+
     def is_available(self) -> bool:
         return self._api_key is not None
 
@@ -106,19 +110,20 @@ class GeminiVLM(VLMProvider):
                 )
         contents.append(prompt)
 
-        config = types.GenerateContentConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-        )
+        config_kwargs = {"max_output_tokens": max_tokens}
+        if not self._uses_thinking_level():
+            config_kwargs["temperature"] = temperature
+        config = types.GenerateContentConfig(**config_kwargs)
         if system_prompt:
             config.system_instruction = system_prompt
         if response_format == "json":
             config.response_mime_type = "application/json"
 
-        # Thinking models (Gemini 2.5+): thinking tokens share the
-        # max_output_tokens budget, starving actual content.  Cap thinking
-        # and scale the total so callers get the full max_tokens for content.
-        if self._is_thinking_model():
+        # Gemini 3.7 replaced fixed thinking budgets with a thinking level.
+        # Older thinking models keep the fixed budget and expanded token cap.
+        if self._uses_thinking_level():
+            config.thinking_config = types.ThinkingConfig(thinking_level="medium")
+        elif self._is_thinking_model():
             thinking_budget = _DEFAULT_THINKING_BUDGET
             config.thinking_config = types.ThinkingConfig(
                 thinking_budget=thinking_budget,

@@ -30,6 +30,12 @@ class TestPricingLookup:
         assert result["input_per_1k"] == pytest.approx(0.005)
         assert result["output_per_1k"] == pytest.approx(0.03)
 
+    def test_gemini_3_7_flash_pricing(self):
+        result = lookup_vlm_price("gemini", "gemini-3.7-flash")
+        assert result is not None
+        assert result["input_per_1k"] == pytest.approx(0.00075)
+        assert result["output_per_1k"] == pytest.approx(0.00375)
+
     def test_unknown_vlm_returns_none(self):
         result = lookup_vlm_price("unknown_provider", "unknown_model")
         assert result is None
@@ -39,7 +45,7 @@ class TestPricingLookup:
         assert result == pytest.approx(0.134)
 
     def test_gemini_flash_image_pricing(self):
-        result = lookup_image_price("google_imagen", "gemini-3.1-flash-image-preview")
+        result = lookup_image_price("google_imagen", "gemini-3.1-flash-image")
         assert result == pytest.approx(0.067)
 
     def test_openai_image_pricing(self):

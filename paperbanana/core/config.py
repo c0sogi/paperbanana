@@ -23,14 +23,14 @@ class VLMConfig(BaseSettings):
     """VLM provider configuration."""
 
     provider: str = "gemini"
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.7-flash"
 
 
 class ImageConfig(BaseSettings):
     """Image generation provider configuration."""
 
     provider: str = "google_imagen"
-    model: str = "gemini-3-pro-image-preview"
+    model: str = "gemini-3.1-flash-image"
 
 
 class PipelineConfig(BaseSettings):
@@ -64,9 +64,9 @@ class Settings(BaseSettings):
 
     # Provider settings
     vlm_provider: str = Field(default="gemini", alias="VLM_PROVIDER")
-    vlm_model: str = Field(default="gemini-2.5-flash", alias="VLM_MODEL")
+    vlm_model: str = Field(default="gemini-3.7-flash", alias="VLM_MODEL")
     image_provider: str = Field(default="google_imagen", alias="IMAGE_PROVIDER")
-    image_model: str = Field(default="gemini-3-pro-image-preview", alias="IMAGE_MODEL")
+    image_model: str = Field(default="gemini-3.1-flash-image", alias="IMAGE_MODEL")
 
     # Pipeline settings
     num_retrieval_examples: int = 10

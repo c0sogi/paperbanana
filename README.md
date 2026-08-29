@@ -120,8 +120,8 @@ cp .env.example .env
 #
 # Optional Gemini overrides:
 #   GOOGLE_BASE_URL=https://your-gemini-proxy.example.com
-#   GOOGLE_VLM_MODEL=gemini-2.5-flash
-#   GOOGLE_IMAGE_MODEL=gemini-3-pro-image-preview
+#   GOOGLE_VLM_MODEL=gemini-3.7-flash
+#   GOOGLE_IMAGE_MODEL=gemini-3.1-flash-image
 ```
 
 Or use the setup wizard for Gemini:
@@ -190,12 +190,12 @@ PaperBanana supports multiple VLM and image generation providers:
 
 | Component | Provider | Model | Notes |
 |-----------|----------|-------|-------|
-| VLM (planning, critique) | OpenAI | `gpt-5.2` | Default |
-| Image Generation | OpenAI | `gpt-image-1.5` | Default |
+| VLM (planning, critique) | OpenAI | `gpt-5.2` | Optional |
+| Image Generation | OpenAI | `gpt-image-1.5` | Optional |
 | VLM | Atlas Cloud | `deepseek-ai/DeepSeek-V3-0324` | OpenAI-compatible chat endpoint |
 | Image Generation | Atlas Cloud | `openai/gpt-image-2/text-to-image` | Async prediction API |
-| VLM | Google Gemini | `gemini-2.5-flash` | Low cost |
-| Image Generation | Google Gemini | `gemini-3-pro-image-preview` | $0.134/image (1K) |
+| VLM | Google Gemini | `gemini-3.7-flash` | Default |
+| Image Generation | Google Gemini | `gemini-3.1-flash-image` | Default; $0.067/image (1K) |
 | VLM / Image | OpenRouter | Any supported model | Flexible routing |
 
 Azure OpenAI / Foundry endpoints are auto-detected — set `OPENAI_BASE_URL` to your endpoint.
@@ -278,10 +278,10 @@ paperbanana generate \
 | `--continue-run` | | Continue from a specific run ID |
 | `--feedback` | | User feedback for the critic when continuing a run |
 | `--pdf-pages` | | PDF input only: 1-based pages (e.g. `1-5`, `2,4,6-8`; default: all) |
-| `--vlm-provider` | | VLM provider name (default: `openai`) |
-| `--vlm-model` | | VLM model name (default: `gpt-5.2`) |
-| `--image-provider` | | Image gen provider (default: `openai_imagen`) |
-| `--image-model` | | Image gen model (default: `gpt-image-1.5`) |
+| `--vlm-provider` | | VLM provider name (default: `gemini`) |
+| `--vlm-model` | | VLM model name (default: `gemini-3.7-flash`) |
+| `--image-provider` | | Image gen provider (default: `google_imagen`) |
+| `--image-model` | | Image gen model (default: `gemini-3.1-flash-image`) |
 | `--format` | `-f` | Output format: `png`, `jpeg`, or `webp` (default: `png`) |
 | `--config` | | Path to YAML config file (see `configs/config.yaml`) |
 | `--verbose` | `-v` | Show detailed agent progress and timing |
@@ -733,12 +733,12 @@ Key settings:
 
 ```yaml
 vlm:
-  provider: openai           # openai, atlas, gemini, or openrouter
-  model: gpt-5.2
+  provider: gemini           # gemini, openai, atlas, or openrouter
+  model: gemini-3.7-flash
 
 image:
-  provider: openai_imagen    # openai_imagen, atlas_imagen, google_imagen, or openrouter_imagen
-  model: gpt-image-1.5
+  provider: google_imagen    # google_imagen, openai_imagen, atlas_imagen, or openrouter_imagen
+  model: gemini-3.1-flash-image
 
 pipeline:
   num_retrieval_examples: 10
@@ -760,7 +760,7 @@ output:
 Environment variables (`.env`):
 
 ```bash
-# OpenAI (default)
+# OpenAI (optional)
 OPENAI_API_KEY=your-key
 OPENAI_BASE_URL=https://api.openai.com/v1    # or Azure endpoint
 OPENAI_VLM_MODEL=gpt-5.2                      # override model
@@ -773,11 +773,11 @@ ATLASCLOUD_VLM_MODEL=deepseek-ai/DeepSeek-V3-0324
 ATLASCLOUD_IMAGE_BASE_URL=https://api.atlascloud.ai/api/v1
 ATLASCLOUD_IMAGE_MODEL=openai/gpt-image-2/text-to-image
 
-# Google Gemini (alternative, free)
+# Google Gemini (default)
 GOOGLE_API_KEY=your-key
 GOOGLE_BASE_URL=                            # optional custom Gemini-compatible endpoint
-GOOGLE_VLM_MODEL=gemini-2.5-flash          # override Gemini VLM model
-GOOGLE_IMAGE_MODEL=gemini-3-pro-image-preview  # override Gemini image model
+GOOGLE_VLM_MODEL=gemini-3.7-flash          # override Gemini VLM model
+GOOGLE_IMAGE_MODEL=gemini-3.1-flash-image  # override Gemini image model
 ```
 
 ---

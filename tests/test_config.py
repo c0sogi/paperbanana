@@ -12,6 +12,16 @@ from pydantic import ValidationError
 from paperbanana.core.config import Settings
 
 
+def test_default_gemini_models(monkeypatch):
+    """Default settings use the current Gemini VLM and image models."""
+    for name in ("VLM_MODEL", "IMAGE_MODEL", "GOOGLE_VLM_MODEL", "GOOGLE_IMAGE_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = Settings(_env_file=None)
+    assert settings.vlm_model == "gemini-3.7-flash"
+    assert settings.image_model == "gemini-3.1-flash-image"
+
+
 def test_output_format_default_is_png():
     """Default output_format remains png."""
     settings = Settings()

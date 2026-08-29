@@ -1,7 +1,7 @@
 """Pricing tables for VLM and image generation providers.
 
 Prices are in USD. VLM prices are per 1K tokens. Image prices are per image.
-Last updated: 2026-06-10.
+Last updated: 2026-08-29.
 """
 
 from __future__ import annotations
@@ -17,11 +17,12 @@ LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "openai_local"})
 
 # (provider, model_prefix) -> {"input_per_1k": USD, "output_per_1k": USD}
 VLM_PRICING: dict[tuple[str, str], dict[str, float]] = {
-    # Google Gemini — free tier
+    # Google Gemini
     ("gemini", "gemini-2.0-flash"): {"input_per_1k": 0.0, "output_per_1k": 0.0},
     ("gemini", "gemini-2.5-flash"): {"input_per_1k": 0.00015, "output_per_1k": 0.0006},
     ("gemini", "gemini-2.5-pro"): {"input_per_1k": 0.00125, "output_per_1k": 0.01},
     ("gemini", "gemini-3-pro"): {"input_per_1k": 0.00125, "output_per_1k": 0.005},
+    ("gemini", "gemini-3.7-flash"): {"input_per_1k": 0.00075, "output_per_1k": 0.00375},
     # OpenAI
     ("openai", "gpt-5.5"): {"input_per_1k": 0.005, "output_per_1k": 0.03},
     ("openai", "gpt-5.2"): {"input_per_1k": 0.0025, "output_per_1k": 0.01},
@@ -48,8 +49,9 @@ VLM_PRICING: dict[tuple[str, str], dict[str, float]] = {
 
 # (provider, model_prefix) -> USD per image
 IMAGE_GEN_PRICING: dict[tuple[str, str], float] = {
-    # Google Imagen — paid; 1K-resolution per-image prices (4K is higher)
+    # Google Gemini image — paid; 1K-resolution per-image prices (4K is higher)
     ("google_imagen", "gemini-3-pro-image-preview"): 0.134,
+    ("google_imagen", "gemini-3.1-flash-image"): 0.067,
     ("google_imagen", "gemini-3.1-flash-image-preview"): 0.067,
     # OpenAI
     # gpt-image-2 is token-priced; this is a high-quality square-image estimate.

@@ -1,4 +1,4 @@
-"""Google Gemini 3 Pro image generation provider."""
+"""Google Gemini image generation provider."""
 
 from __future__ import annotations
 
@@ -16,16 +16,16 @@ logger = structlog.get_logger()
 
 
 class GoogleImagenGen(ImageGenProvider):
-    """Google Gemini 3 Pro Image generation via google-genai SDK.
+    """Google Gemini image generation via google-genai SDK.
 
-    Uses the gemini-3-pro-image-preview model with response_modalities=["IMAGE"].
+    Uses the gemini-3.1-flash-image model with response_modalities=["IMAGE"].
     Requires a Google API key (free tier available).
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-3-pro-image-preview",
+        model: str = "gemini-3.1-flash-image",
         base_url: Optional[str] = None,
     ):
         self._api_key = api_key

@@ -127,6 +127,19 @@ class TestThinkingBudgetAdjustment:
         assert config.thinking_config.thinking_budget == _DEFAULT_THINKING_BUDGET
 
     @pytest.mark.asyncio
+    async def test_gemini_3_7_uses_thinking_level_without_temperature(self, _mock_genai):
+        captured, fake_client_cls = _mock_genai
+        vlm = GeminiVLM(api_key="fake", model="gemini-3.7-flash")
+        vlm._client = fake_client_cls()
+
+        await vlm.generate("hello", temperature=0.5)
+
+        config = captured["config"]
+        assert not hasattr(config, "temperature")
+        assert config.thinking_config.thinking_level == "medium"
+        assert not hasattr(config.thinking_config, "thinking_budget")
+
+    @pytest.mark.asyncio
     async def test_non_thinking_model_unchanged(self, _mock_genai):
         captured, fake_client_cls = _mock_genai
         vlm = GeminiVLM(api_key="fake", model="gemini-2.0-flash")

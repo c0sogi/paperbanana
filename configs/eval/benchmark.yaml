@@ -3,11 +3,11 @@
 
 vlm:
   provider: gemini
-  model: gemini-2.5-flash
+  model: gemini-3.7-flash
 
 image:
   provider: google_imagen
-  model: gemini-3-pro-image-preview
+  model: gemini-3.1-flash-image
 
 pipeline:
   refinement_iterations: 3
