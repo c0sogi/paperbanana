@@ -1,0 +1,14 @@
+{
+  "name": "paperbanana",
+  "description": "PaperBanana academic figure generation for Claude Code",
+  "owner": {
+    "name": "c0sogi"
+  },
+  "plugins": [
+    {
+      "name": "paperbanana",
+      "source": "./",
+      "description": "Generate, refine, evaluate, and package publication-ready academic diagrams and plots with PaperBanana."
+    }
+  ]
+}

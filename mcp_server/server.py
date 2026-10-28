@@ -17,6 +17,7 @@ Tools:
     evaluate_diagram    — Evaluate a generated diagram against a reference
     evaluate_plot       — Evaluate a generated plot against a reference
     download_references — Download the PaperBananaBench reference set (~298 examples)
+    check_setup         — Report visible API keys, default models, and reference data
     orchestrate_figures — Full-paper figure package (plan + optional generation)
     batch_diagrams      — Batch methodology diagrams from a YAML/JSON manifest
     batch_plots         — Batch statistical plots from a YAML/JSON manifest
@@ -828,6 +829,76 @@ async def download_references(
     )
 
 
+# The Claude Code plugin (.claude-plugin/plugin.json) passes its configured keys
+# under these names. They are copied to the provider variables only when set, so
+# an option the user left empty can't shadow a key from the shell or a .env file.
+_PLUGIN_CREDENTIALS = {
+    "PAPERBANANA_PLUGIN_GOOGLE_API_KEY": "GOOGLE_API_KEY",
+    "PAPERBANANA_PLUGIN_OPENAI_API_KEY": "OPENAI_API_KEY",
+}
+_plugin_provided_keys: set[str] = set()
+
+
+def _apply_plugin_credentials() -> None:
+    """Promote API keys configured in the Claude Code plugin to provider env vars."""
+    for source, target in _PLUGIN_CREDENTIALS.items():
+        value = os.environ.pop(source, "").strip()
+        # Claude Code passes an unset option as "". Outside a plugin, the
+        # ${user_config.*} reference can arrive unexpanded.
+        if value and not value.startswith("${"):
+            os.environ[target] = value
+            _plugin_provided_keys.add(target)
+
+
+@mcp.tool
+async def check_setup() -> str:
+    """Report the API keys, default models, and reference data this server sees.
+
+    Key values are never returned, only whether each key is set and where it
+    came from: ``plugin_config``, ``environment``, or ``dotenv``. Makes no API calls.
+    """
+    from importlib.util import find_spec
+
+    from paperbanana import __version__
+    from paperbanana.data.manager import DatasetManager
+
+    settings = Settings()
+    api_keys: dict[str, dict[str, Any]] = {}
+    for env_var, value in (
+        ("GOOGLE_API_KEY", settings.google_api_key),
+        ("OPENAI_API_KEY", settings.openai_api_key),
+    ):
+        if not value:
+            source = None
+        elif env_var in _plugin_provided_keys:
+            source = "plugin_config"
+        elif os.environ.get(env_var, "").strip():
+            source = "environment"
+        else:
+            source = "dotenv"
+        api_keys[env_var] = {"set": bool(value), "source": source}
+
+    references = DatasetManager()
+    return _json_result(
+        {
+            "paperbanana_version": __version__,
+            "output_dir": str(Path(settings.output_dir).resolve()),
+            "api_keys": api_keys,
+            "defaults": {
+                "vlm_provider": settings.vlm_provider,
+                "vlm_model": settings.effective_vlm_model,
+                "image_provider": settings.image_provider,
+                "image_model": settings.effective_image_model,
+            },
+            "pdf_input_supported": find_spec("fitz") is not None,
+            "expanded_reference_set": {
+                "cached": references.is_downloaded(),
+                "location": str(references.reference_dir),
+            },
+        }
+    )
+
+
 def _json_result(payload: dict) -> str:
     return json.dumps(payload, indent=2)
 
@@ -1207,6 +1278,7 @@ async def batch_plots(
 
 def main():
     """MCP server entry point."""
+    _apply_plugin_credentials()
     mcp.run()
 
 

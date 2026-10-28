@@ -23,6 +23,7 @@ MCP server that exposes PaperBanana's diagram and plot generation as tools for C
 | `batch_diagrams` | Run a methodology batch from a manifest path (`paperbanana batch`) |
 | `batch_plots` | Run a statistical plot batch from a manifest path (`paperbanana plot-batch`) |
 | `list_available_models` | List exact selectable model IDs, inferred providers, status, required environment variables, and dated pricing |
+| `check_setup` | Report which API keys the server sees and where each came from (plugin config, environment, or `.env`; never the values), the default models, PDF support, the output folder, and the reference-set cache. No API calls |
 
 ### Model selection
 
@@ -72,18 +73,17 @@ No local clone needed. Add the config below to your MCP client.
 
 ### Claude Code
 
-Add to `.claude/claude_code_config.json` (or project-level):
+Install the PaperBanana plugin, which runs this server and adds skills that drive it (see [Claude Code Plugin](../README.md#claude-code-plugin)):
 
-```json
-{
-  "mcpServers": {
-    "paperbanana": {
-      "command": "uvx",
-      "args": ["--from", "paperbanana[mcp]", "paperbanana-mcp"],
-      "env": { "GOOGLE_API_KEY": "your-google-api-key" }
-    }
-  }
-}
+```bash
+claude plugin marketplace add c0sogi/paperbanana
+claude plugin install paperbanana@paperbanana
+```
+
+To add only the server, without the skills:
+
+```bash
+claude mcp add paperbanana -- uvx --from "paperbanana[mcp] @ git+https://github.com/c0sogi/paperbanana" paperbanana-mcp
 ```
 
 ### Cursor
@@ -125,15 +125,7 @@ This installs `fastmcp` and registers the `paperbanana-mcp` console script. Then
 
 ## Skills (Claude Code)
 
-This repo ships with 3 Claude Code skills in `.claude/skills/`:
-
-| Skill | Description |
-|-------|-------------|
-| `/generate-diagram <file> [caption]` | Generate a methodology diagram from a text file |
-| `/generate-plot <data-file> [intent]` | Generate a statistical plot from CSV or JSON data |
-| `/evaluate-diagram <generated> <reference>` | Evaluate a diagram against a human reference |
-
-Skills are available automatically when you clone the repo and use Claude Code.
+The Claude Code skills live in `skills/` at the repository root and ship with the plugin, as `/paperbanana:generate-diagram`, `/paperbanana:generate-plot`, `/paperbanana:refine-figure`, `/paperbanana:evaluate-figure`, `/paperbanana:paper-figures`, and `/paperbanana:setup`. See [Claude Code Plugin](../README.md#claude-code-plugin). To try local changes to the skills or the server, run `claude --plugin-dir .` from the repository root.
 
 ## Usage Examples
 
