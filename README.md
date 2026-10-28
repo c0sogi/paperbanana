@@ -44,7 +44,7 @@ An agentic framework for generating publication-quality academic diagrams and st
 - **Batch plots** — `paperbanana plot-batch` runs many statistical plots from one manifest (CSV/JSON per item)
 - **PDF inputs** for methodology context (optional `paperbanana[pdf]` / PyMuPDF), with per-page selection
 - **PaperBanana Studio** — local Gradio web UI (`paperbanana studio`) for diagrams, plots, evaluation, batch, and run browser
-- Claude Code skills for `/generate-diagram`, `/generate-plot`, and `/evaluate-diagram`
+- **Claude Code plugin** that bundles the MCP server with skills for diagrams, plots, refinement, evaluation, and full-paper figure packages
 
 <p align="center">
   <img src="assets/img/hero_image.png" alt="PaperBanana takes paper as input and provide diagram as output" style="max-width: 960px; width: 100%; height: auto;"/>
@@ -689,16 +689,41 @@ or run the `claude mcp add` command directly:
 claude mcp add paperbanana -- uvx --from "paperbanana[mcp] @ git+https://github.com/c0sogi/paperbanana" paperbanana-mcp
 ```
 
-Seventeen MCP tools are exposed. In addition to blocking generation and evaluation tools, `start_diagram_session`, `list_figure_sessions`, `get_figure_session`, `preview_figure_session`, and `cancel_figure_session` support observable, cancellable background diagram generation. The remaining tools are `generate_diagram`, `generate_plot`, `continue_run` (resume a prior `run_*` with optional feedback), `continue_diagram`, `continue_plot`, `evaluate_diagram`, `evaluate_plot`, `orchestrate_figures` (full-paper figure packages), `batch_diagrams`, `batch_plots`, `download_references`, and `list_available_models`.
+Eighteen MCP tools are exposed. In addition to blocking generation and evaluation tools, `start_diagram_session`, `list_figure_sessions`, `get_figure_session`, `preview_figure_session`, and `cancel_figure_session` support observable, cancellable background diagram generation. The remaining tools are `generate_diagram`, `generate_plot`, `continue_run` (resume a prior `run_*` with optional feedback), `continue_diagram`, `continue_plot`, `evaluate_diagram`, `evaluate_plot`, `orchestrate_figures` (full-paper figure packages), `batch_diagrams`, `batch_plots`, `download_references`, `list_available_models`, and `check_setup` (which API keys the server sees and where they came from, without their values).
 
 Generation calls accept exact `vlm_model` and `image_model` IDs and infer the provider automatically. For example: `{"source_context":"...","caption":"...","vlm_model":"gemini-3.7-flash","image_model":"gpt-image-2"}`. Call `list_available_models` when you need the complete allowed-model list and dated pricing; omitting model fields preserves `.env`/YAML settings and the Gemini defaults.
 
-The repo also ships with 3 Claude Code skills:
-- `/generate-diagram <file> [caption]` - generate a methodology diagram from a text file
-- `/generate-plot <data-file> [intent]` - generate a statistical plot from CSV/JSON data
-- `/evaluate-diagram <generated> <reference>` - evaluate a diagram against a human reference
+In Claude Code, the [plugin](#claude-code-plugin) sets this server up for you along with skills that drive it.
 
 See [`mcp_server/README.md`](mcp_server/README.md) for full setup details (Claude Code, Cursor, local development).
+
+---
+
+## Claude Code Plugin
+
+This repository is also a Claude Code plugin marketplace. The `paperbanana` plugin bundles the MCP server above and six skills. It runs the server from the plugin's own copy of this repository with `uvx`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be installed.
+
+```bash
+claude plugin marketplace add c0sogi/paperbanana
+claude plugin install paperbanana@paperbanana
+```
+
+Inside a session, `/plugin marketplace add c0sogi/paperbanana` followed by `/plugin install paperbanana@paperbanana` does the same.
+
+When you enable the plugin, Claude Code asks for a Google Gemini API key (used by the default models) and an optional OpenAI API key, and stores them in your system keychain. Leave them empty to use `GOOGLE_API_KEY` / `OPENAI_API_KEY` from your environment or a project `.env` file instead; a key set in the plugin takes precedence.
+
+| Skill | What it does |
+|-------|--------------|
+| `/paperbanana:generate-diagram [file] [caption]` | Methodology diagram from method text, a LaTeX/Markdown section, or a PDF |
+| `/paperbanana:generate-plot [data] [intent]` | Statistical plot from CSV/JSON results |
+| `/paperbanana:refine-figure [run_id] [feedback]` | Continue an earlier run with your feedback |
+| `/paperbanana:evaluate-figure <generated> <reference>` | VLM-as-judge comparison against a reference figure |
+| `/paperbanana:paper-figures <paper> [results-dir]` | Plan, review, then generate a full figure package (or run a batch manifest) |
+| `/paperbanana:setup` | Check uv, the MCP server, API keys, and the optional reference set |
+
+Claude also picks these skills up on its own, so a request such as "draw the method figure for section 3 of paper.pdf" works without the slash command. Figures are written to `outputs/` in your project directory.
+
+The plugin follows this repository's commits. Run `claude plugin update paperbanana@paperbanana` to pick up new commits, or turn on auto-update for the `paperbanana` marketplace under `/plugin`. To develop the plugin, load your checkout for one session with `claude --plugin-dir .`; it takes precedence over the installed copy.
 
 ---
 
@@ -809,7 +834,8 @@ paperbanana/
 ├── scripts/           # Data curation and build scripts
 ├── tests/             # Test suite
 ├── mcp_server/        # MCP server for IDE integration
-└── .claude/skills/    # Claude Code skills (generate-diagram, generate-plot, evaluate-diagram)
+├── skills/            # Claude Code plugin skills (diagrams, plots, refine, evaluate, paper figures, setup)
+└── .claude-plugin/    # Claude Code plugin manifest and marketplace
 ```
 
 ## Development

@@ -20,6 +20,7 @@ EXPECTED_TOOLS = {
     "batch_diagrams",
     "batch_plots",
     "cancel_figure_session",
+    "check_setup",
     "continue_diagram",
     "continue_plot",
     "continue_run",
