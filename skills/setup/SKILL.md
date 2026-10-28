@@ -15,7 +15,7 @@ Keep this short. `check_setup` reports what the server sees, so don't read the p
    - uv is missing: the plugin starts its server with `uvx`, so the user needs to install uv (https://docs.astral.sh/uv/getting-started/installation/) and restart Claude Code. The server's first start downloads its Python dependencies and can take a minute.
    - uv is present: ask the user to open `/mcp`, select `plugin:paperbanana:paperbanana`, and share the error it shows.
 3. **API keys.** The default models need `GOOGLE_API_KEY`; OpenAI models (`gpt-5.2`, `gpt-image-1.5`, `gpt-image-2`) need `OPENAI_API_KEY`. If a key the user needs isn't set, explain where it can come from, highest precedence first, and never ask the user to paste a key into the chat:
-   1. The plugin's options, kept in the system keychain: `/plugin` → installed plugin → configure, or `claude plugin configure paperbanana@paperbanana` in a terminal.
+   1. The plugin's options, kept in the system keychain: `/plugin configure paperbanana@paperbanana` in Claude Code. A terminal install (`claude plugin install`) doesn't ask for them, so they are often still empty.
    2. `GOOGLE_API_KEY` or `OPENAI_API_KEY` in the environment Claude Code starts from.
    3. A `.env` file in the project directory.
 

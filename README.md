@@ -710,7 +710,7 @@ claude plugin install paperbanana@paperbanana
 
 Inside a session, `/plugin marketplace add c0sogi/paperbanana` followed by `/plugin install paperbanana@paperbanana` does the same.
 
-When you enable the plugin, Claude Code asks for a Google Gemini API key (used by the default models) and an optional OpenAI API key, and stores them in your system keychain. Leave them empty to use `GOOGLE_API_KEY` / `OPENAI_API_KEY` from your environment or a project `.env` file instead; a key set in the plugin takes precedence.
+When you install the plugin from `/plugin`, Claude Code asks for a Google Gemini API key (used by the default models) and an optional OpenAI API key, and stores them in your system keychain. `claude plugin install` in a terminal doesn't ask; set the keys afterwards with `/plugin configure paperbanana@paperbanana` inside Claude Code. Leave them empty to use `GOOGLE_API_KEY` / `OPENAI_API_KEY` from your environment or a project `.env` file instead; a key set in the plugin takes precedence.
 
 | Skill | What it does |
 |-------|--------------|
