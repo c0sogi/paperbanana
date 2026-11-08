@@ -701,16 +701,16 @@ See [`mcp_server/README.md`](mcp_server/README.md) for full setup details (Claud
 
 ## Claude Code Plugin
 
-This repository is also a Claude Code plugin marketplace. The `paperbanana` plugin bundles the MCP server above and six skills. It runs the server from the plugin's own copy of this repository with `uvx`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be installed.
+The `paperbanana` Claude Code plugin is available from the [`c0sogi/plugins`](https://github.com/c0sogi/plugins) marketplace. It bundles the MCP server above and six skills. It runs the server from the plugin's own copy of this repository with `uvx`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be installed.
 
 ```bash
-claude plugin marketplace add c0sogi/paperbanana
-claude plugin install paperbanana@paperbanana
+claude plugin marketplace add c0sogi/plugins
+claude plugin install paperbanana@c0sogi
 ```
 
-Inside a session, `/plugin marketplace add c0sogi/paperbanana` followed by `/plugin install paperbanana@paperbanana` does the same.
+Inside a session, `/plugin marketplace add c0sogi/plugins` followed by `/plugin install paperbanana@c0sogi` does the same. This repository also still works as its own marketplace (`c0sogi/paperbanana`); if you installed from there, use `paperbanana@paperbanana` in the commands below.
 
-When you install the plugin from `/plugin`, Claude Code asks for a Google Gemini API key (used by the default models) and an optional OpenAI API key, and stores them in your system keychain. `claude plugin install` in a terminal doesn't ask; set the keys afterwards with `/plugin configure paperbanana@paperbanana` inside Claude Code. Leave them empty to use `GOOGLE_API_KEY` / `OPENAI_API_KEY` from your environment or a project `.env` file instead; a key set in the plugin takes precedence.
+When you install the plugin from `/plugin`, Claude Code asks for a Google Gemini API key (used by the default models) and an optional OpenAI API key, and stores them in your system keychain. `claude plugin install` in a terminal doesn't ask; set the keys afterwards with `/plugin configure paperbanana@c0sogi` inside Claude Code. Leave them empty to use `GOOGLE_API_KEY` / `OPENAI_API_KEY` from your environment or a project `.env` file instead; a key set in the plugin takes precedence.
 
 | Skill | What it does |
 |-------|--------------|
@@ -723,7 +723,7 @@ When you install the plugin from `/plugin`, Claude Code asks for a Google Gemini
 
 Claude also picks these skills up on its own, so a request such as "draw the method figure for section 3 of paper.pdf" works without the slash command. Figures are written to `outputs/` in your project directory.
 
-The plugin follows this repository's commits. Run `claude plugin update paperbanana@paperbanana` to pick up new commits, or turn on auto-update for the `paperbanana` marketplace under `/plugin`. To develop the plugin, load your checkout for one session with `claude --plugin-dir .`; it takes precedence over the installed copy.
+The plugin follows this repository's commits. Run `claude plugin update paperbanana@c0sogi` to pick up new commits, or turn on auto-update for the `c0sogi` marketplace under `/plugin`. To develop the plugin, load your checkout for one session with `claude --plugin-dir .`; it takes precedence over the installed copy.
 
 ---
 
