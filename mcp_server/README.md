@@ -76,8 +76,8 @@ No local clone needed. Add the config below to your MCP client.
 Install the PaperBanana plugin, which runs this server and adds skills that drive it (see [Claude Code Plugin](../README.md#claude-code-plugin)):
 
 ```bash
-claude plugin marketplace add c0sogi/paperbanana
-claude plugin install paperbanana@paperbanana
+claude plugin marketplace add c0sogi/plugins
+claude plugin install paperbanana@c0sogi
 ```
 
 To add only the server, without the skills:
